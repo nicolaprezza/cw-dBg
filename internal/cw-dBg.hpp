@@ -11,22 +11,42 @@
 #define INCLUDED_CWDBG
 
 #include <sdsl/bit_vectors.hpp>
+#include <sdsl/vectors.hpp>
+#include <internal/dBg.hpp>
 
 using namespace sdsl;
+using namespace dbg;
+using namespace std;
 
-namespace dBg{
+namespace dbg{
 
-template	<	class dBg_type = int,
-				class int_vector = int >
+/*
+ * cint_vector: used to store the deltas on the MST edges
+ */
+template	<	class cint_vector = dac_vector_dp<rrr_vector<> >
+				//class cint_vector = dac_vector<>
+				//class cint_vector = vlc_vector<coder::elias_gamma>
+				//class cint_vector = vlc_vector<coder::elias_delta>
+			>
 class cw_dBg{
 
 public:
 
+	cw_dBg(){}
+
+	/*
+	 * constructor from fastq/fasta file
+	 */
+	cw_dBg(string filename, format_t format){
+
+		G = dBg<>(filename, format);
+
+	}
 
 private:
 
-	dBg_type dBg; //the underlying de Bruijn graph
-	int_vector deltas; //delta-encoded weights with fast random access
+	dBg<> G; //the underlying de Bruijn graph
+	cint_vector deltas; //compressed deltas on the edges of the MST
 
 	//marks edges on the dBg that belong to the MST
 	rrr_vector<> mst;
@@ -37,7 +57,7 @@ private:
 	rrr_vector<>::rank_1_type sampled_rank;
 
 	//sampled weights
-	int_vector samples;
+	int_vector<0> samples;
 
 };
 

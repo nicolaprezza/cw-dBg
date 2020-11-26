@@ -5,12 +5,11 @@
 
 //using namespace dBg;
 using namespace std;
-using namespace dBg;
+using namespace dbg;
 
 int srate = 50; //sample rate
 uint64_t nlines = 0;
 
-enum format_t {fasta, fastq};
 format_t format = fastq;
 
 void help(){
@@ -80,7 +79,7 @@ int main(int argc, char** argv){
 
 	auto t1 = std::chrono::high_resolution_clock::now();
 
-	cw_dBg<> cwdbg;
+	cw_dBg<> cwdbg(input_file, format);
 
 	auto t2 = std::chrono::high_resolution_clock::now();
 
