@@ -1,11 +1,10 @@
 # cw-dBg: the compressed weighted de Bruijn graph
 
-Author: Nicola Prezza (nicola.prezza@gmail.com)
-Joint work with Giuseppe Italiano, Blerina Sinaimeri, Rossano Venturini
+Author: Nicola Prezza. Joint work with Giuseppe Italiano, Blerina Sinaimeri, Rossano Venturini
 
 ### Description
 
-**Warning: experimental code. Runs only on small files (dBg construction is not optimized)**
+**Warning: experimental code. Runs only on small files (dBg construction is not yet optimized)**
 
 This library builds a compressed representation of the weighted de Bruijn graph. The underlying graph topology is stored using the BOSS representation, while the weights are differentially encoded and sampled on a spanning tree of the graph. Typically, in a 30x-covered dataset the weights are squeezed down to about 3 bits per distinct k-mer. On top of this, the BOSS representation takes about 4 bits per distinct k-mer.
 

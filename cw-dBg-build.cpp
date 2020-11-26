@@ -1,10 +1,11 @@
 #include <cassert>
 #include <iostream>
 #include <chrono>
-//#include "internal/cw-dBg.hpp"
+#include "internal/cw-dBg.hpp"
 
 //using namespace dBg;
 using namespace std;
+using namespace dBg;
 
 int srate = 50; //sample rate
 uint64_t nlines = 0;
@@ -78,7 +79,9 @@ int main(int argc, char** argv){
 	cout << "called as: cw-dBg-build " << (format==fasta?"-a ":"") << "-l " << nlines << " -s " << srate << " " << input_file << " " << k << endl;
 
 	auto t1 = std::chrono::high_resolution_clock::now();
-	// here buid
+
+	cw_dBg<> cwdbg;
+
 	auto t2 = std::chrono::high_resolution_clock::now();
 
 	uint64_t elapsed = std::chrono::duration_cast<std::chrono::seconds>(t2 - t1).count();
