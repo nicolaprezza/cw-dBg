@@ -1,14 +1,13 @@
 # cw-dBg: the compressed weighted de Bruijn graph
 
-===============
 Author: Nicola Prezza (nicola.prezza@gmail.com)
 Joint work with Giuseppe Italiano, Blerina Sinaimeri, Rossano Venturini
 
 ### Description
 
-This library builds a compressed representation of the weighted de Bruijn graph. The underlying graph topology is stored using the BOSS representation, while the weights are differentially encoded and sampled on a spanning tree of the graph. Typically, in a 30x-covered dataset the weights are squeezed down to about 3 bits per distinct k-mer. On top of this, the BOSS representation takes about 4 bits per distinct k-mer.
-
 **Warning: experimental code. Runs only on small files (dBg construction is not optimized)**
+
+This library builds a compressed representation of the weighted de Bruijn graph. The underlying graph topology is stored using the BOSS representation, while the weights are differentially encoded and sampled on a spanning tree of the graph. Typically, in a 30x-covered dataset the weights are squeezed down to about 3 bits per distinct k-mer. On top of this, the BOSS representation takes about 4 bits per distinct k-mer.
 
 ### Download
 
@@ -36,6 +35,6 @@ and compile:
 
 After compiling, run 
 
->  cw-dBg-build [-l nlines] [-a] [-s srate] <input> <k>
+>  cw-dBg-build [-l nlines] [-a] [-s srate] input k
 
-to build the compressed weighted de Bruijn graph of order <k> on the file <input> (a fastq file by default, or a fasta file if option -a is specified). if option -l nlines is specified, build the graph using only the first nlines sequences from the input file. If option -s srate is specified, sample one out of srate weights (default: srate=50).
+to build the compressed weighted de Bruijn graph of order k on the file input (a fastq file by default, or a fasta file if option -a is specified). if option -l nlines is specified, build the graph using only the first nlines sequences from the input file. If option -s srate is specified, sample one out of srate weights (default: srate=50).
