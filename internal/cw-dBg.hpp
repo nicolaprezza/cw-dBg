@@ -111,8 +111,8 @@ public:
 		string BWT_;
 		vector<uint32_t> weights;
 
-		vector<bool> OUT_; //out-degrees: mark first edge (in BWT order) of each new k-mer
-		vector<bool> first; //marks first edge (in BWT order) of each new (k-1)-mer
+		vector<bool> OUT_; //out-degrees: mark last edge (in BWT order) of each new k-mer
+		vector<bool> last; //marks first edge (in BWT order) of each new (k-1)-mer
 
 		//begin scope of vector<__uint128_t> kmers;
 		{
@@ -168,7 +168,7 @@ public:
 			}
 
 			if(verbose)
-				cout << "\nDone. Sorting k-mers ..." << endl;
+				cout << "Done. Sorting k-mers ..." << endl;
 
 			sort(kmers.begin(),kmers.end());
 
@@ -179,7 +179,7 @@ public:
 			__uint128_t prev_kmer = kmers[0];
 			BWT_.push_back(toCHAR(kmers[0] & __uint128_t(7)));
 			OUT_.push_back(true);//mark that this BWT char is the first of the new kmer
-			first.push_back(true);//mark that this BWT char is the first of the new (k-1)-mer
+			last.push_back(true);//mark that this BWT char is the first of the new (k-1)-mer
 
 			uint32_t count = 1;
 
@@ -188,7 +188,7 @@ public:
 				//if (k-1)-mer changes (we will also push in BWT since automatically also the k-mer changes)
 				if((kmers[i]>>6) != (prev_kmer>>6)){
 
-					first.push_back(true);
+					last.push_back(true);
 
 				}
 
@@ -198,7 +198,7 @@ public:
 					//if (k-1)-mer stays the same
 					if((kmers[i]>>6) == (prev_kmer>>6)){
 
-						first.push_back(false);
+						last.push_back(false);
 
 					}
 
@@ -210,7 +210,7 @@ public:
 					BWT_.push_back(toCHAR(kmers[i] & __uint128_t(7)));//append to BWT first outgoing edge of this new kmer
 					OUT_.push_back(true);//mark that this BWT char is the first of the new kmer
 
-				}else{//same kmer
+				}else{//same kmer (and thus also (k-1)-mer)
 
 					count++;
 
@@ -219,7 +219,7 @@ public:
 
 						BWT_.push_back(toCHAR(kmers[i] & __uint128_t(7)));
 						OUT_.push_back(false);//mark that this BWT char is NOT the first of the current kmer
-						first.push_back(false);//mark that this BWT char is NOT the first of the current (k-1)-mer
+						last.push_back(false);//mark that this BWT char is NOT the first of the current (k-1)-mer
 
 					}
 
@@ -230,20 +230,121 @@ public:
 			}
 
 			assert(OUT_.size() == BWT_.length());
-			assert(first.size() == BWT_.length());
+			assert(last.size() == BWT_.length());
 
 		}//end scope of vector<__uint128_t> kmers;
+
+		C = vector<uint64_t>(5);
+
+		for(auto c : BWT_) C[toINT(c)]++;
+
+		C[0] = 1;
+		C[1] += C[0];
+		C[2] += C[1];
+		C[3] += C[2];
+		C[4] += C[3];
+
+		C[4] = C[3];
+		C[3] = C[2];
+		C[2] = C[1];
+		C[1] = C[0];
 
 		if(verbose)
 			cout << "Done. Indexing all structures ..." << endl;
 
+		construct_im(BWT, BWT_.c_str(), 1);
 
+		{
+
+			//flip bits in OUT so that they mark the last (not first) edge of each kmer
+			for(uint64_t i=0;i<OUT_.size()-1;++i){
+
+				OUT_[i] = false;
+				if(OUT_[i+1]) OUT_[i] = true;
+
+			}
+			OUT_[OUT_.size()-1] = true;
+
+			bit_vector out_bv(OUT_.size());
+			for(uint64_t i=0;i<OUT_.size();++i)
+				out_bv[i] = OUT_[i];
+
+			OUT = bitv_type(out_bv);
+
+		}
+
+		OUT_rank = typename bitv_type::rank_1_type(&OUT);
+		OUT_sel = typename bitv_type::select_1_type(&OUT);
+
+		{
+
+			//flip bits in last so that they mark the last (not first) edge of each kmer
+			for(uint64_t i=0;i<last.size()-1;++i){
+
+				last[i] = false;
+				if(last[i+1]) last[i] = true;
+
+			}
+			last[last.size()-1] = true;
+
+			bit_vector IN_(BWT.size() - BWT.rank(BWT.size(),'$'), false);
+
+			for(uint64_t i=0;i<last.size();++i){
+
+				if(last[i])
+					IN_[LF(i)] = true;
+
+			}
+
+			IN = bitv_type(IN_);
+
+		}
+
+		IN_rank = typename bitv_type::rank_1_type(&IN);
+		IN_sel = typename bitv_type::select_1_type(&IN);
 
 
 
 	}
 
 private:
+
+	uint8_t F_int(uint64_t i){
+
+		uint8_t  c = i>=C[1] and i<C[2] ? 1 :
+				 i>=C[2] and i<C[3] ? 2 :
+				 i>=C[3] and i<C[4] ? 3 :
+				 i>=C[4]            ? 4 : 0;
+
+		return c;
+
+	}
+
+	char F(uint64_t i){
+
+		return toCHAR(F_int(i));
+
+	}
+
+	uint64_t LF(uint64_t i){
+
+		char c = BWT[i];
+
+		assert(c!='$');
+
+		return C[toINT(c)] + BWT.rank(i,c);
+
+	}
+
+	uint64_t FL(uint64_t i){
+
+		assert(i>0);
+
+		uint8_t  c = F_int(i);
+
+		return BWT.select((i-C[c])+1,toCHAR(c));
+
+	}
 
 	//parameters:
 
@@ -254,7 +355,7 @@ private:
 
 	str_type BWT;
 
-	vector<uint64_t> F; //F column
+	vector<uint64_t> C; //C array
 
 	bitv_type IN;
 	typename bitv_type::rank_1_type IN_rank;
