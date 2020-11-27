@@ -7,7 +7,7 @@
 using namespace std;
 using namespace dbg;
 
-int srate = 50; //sample rate
+uint16_t srate = 64; //sample rate
 uint64_t nlines = 0;
 
 format_t format = fastq;
@@ -20,7 +20,7 @@ void help(){
 	cout << "   -a                  the input file is fasta. If not specified, it is assumed that the input file is fastq."<<endl;
 	cout << "   -s <srate>          sample one out of srate weights. Default: 50."<<endl;
 	cout << "   <input>             input fasta/fastq file (see option -a). Mandatory."<<endl;
-	cout << "   <k>                 order of the de Bruijn graph. Mandatory."<<endl;
+	cout << "   <k>                 order of the de Bruijn graph in [1,41]. Mandatory."<<endl;
 	exit(0);
 }
 
@@ -72,14 +72,19 @@ int main(int argc, char** argv){
 		parse_args(argv, argc, ptr);
 
 	auto input_file = string(argv[ptr++]);
-	int k = atoi(argv[ptr]);
+	uint8_t k = atoi(argv[ptr]);
+
+	if(k>41 or k==0){
+		cout << "Error: k must be in [1,41]" << endl;
+		help();
+	}
 
 	cout << "Building compressed weighted de Bruijn graph of input file " << input_file << endl;
 	cout << "called as: cw-dBg-build " << (format==fasta?"-a ":"") << "-l " << nlines << " -s " << srate << " " << input_file << " " << k << endl;
 
 	auto t1 = std::chrono::high_resolution_clock::now();
 
-	cw_dBg<> cwdbg(input_file, format);
+	cw_dBg<> cwdbg(input_file, format, nlines, k, srate, true);
 
 	auto t2 = std::chrono::high_resolution_clock::now();
 
