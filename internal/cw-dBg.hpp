@@ -114,10 +114,45 @@ public:
 		vector<bool> OUT_; //out-degrees: mark last edge (in BWT order) of each new k-mer
 		vector<bool> last; //marks first edge (in BWT order) of each new (k-1)-mer
 
+		if(verbose)
+			cout << "Computing how much memory I need to allocate ..." << endl;
+
+		uint64_t pre_allocation = 0;
+
+		{
+			//count how many kmers we will generate (one per base)
+
+			ifstream file(filename);
+			int read_lines=0;
+
+			string str;
+			while (std::getline(file, str) and (nlines == 0 or read_lines < nlines)) { //getline reads header
+
+				getline(file, str);//getline reads DNA
+
+				pre_allocation += str.length()+1;
+
+				if(format == fastq){
+					getline(file, str);//getline reads +
+					getline(file, str);//getline reads quality
+				}
+
+				read_lines++;
+
+				if(read_lines%1000000==0 and verbose)
+					cout << "read " << read_lines << " sequences" << endl;
+
+			}
+
+		}
+
 		//begin scope of vector<__uint128_t> kmers;
 		{
 
 			ifstream file(filename);
+
+			if(verbose)
+				cout << "Done. Trying to allocate " << pre_allocation*16 << " Bytes ... " << endl;
 
 			int read_lines=0;
 
@@ -127,9 +162,10 @@ public:
 			 *
 			 */
 			vector<__uint128_t> kmers;
+			kmers.reserve(pre_allocation);
 
 			if(verbose)
-				cout << "Extracting k-mers from dataset ..." << endl;
+				cout << "Done. Extracting k-mers from dataset ..." << endl;
 
 			string str;
 			while (std::getline(file, str) and (nlines == 0 or read_lines < nlines)) { //getline reads header
@@ -162,7 +198,7 @@ public:
 
 				read_lines++;
 
-				if(read_lines%100000==0 and verbose)
+				if(read_lines%1000000==0 and verbose)
 					cout << "read " << read_lines << " sequences" << endl;
 
 			}
@@ -205,6 +241,14 @@ public:
 					//we set to 0 the counters of kmers that contain $
 					count = has_dollars(prev_kmer)?0:count;
 					weights.push_back(count); //I'm pushing the weight of the previous kmer
+
+					if(not has_dollars(prev_kmer)){
+						MAX_WEIGHT = count>MAX_WEIGHT?count:MAX_WEIGHT;
+						MEAN_WEIGHT += count;
+					}else{
+						padded_kmers++;
+					}
+
 					count = 1; //start counting weight of this new kmer
 
 					BWT_.push_back(toCHAR(kmers[i] & __uint128_t(7)));//append to BWT first outgoing edge of this new kmer
@@ -232,22 +276,20 @@ public:
 
 			}
 
+			if(not has_dollars(prev_kmer)){
+				MAX_WEIGHT = count>MAX_WEIGHT?count:MAX_WEIGHT;
+				MEAN_WEIGHT += count;
+			}else{
+				padded_kmers++;
+			}
+
 			weights.push_back(count);//push back weight of the lasst kmer
 			assert(OUT_.size() == BWT_.length());
 			assert(last.size() == BWT_.length());
 
 		}//end scope of vector<__uint128_t> kmers;
 
-
-		MAX_WEIGHT = 0;
-		for(auto w:weights){
-
-			MAX_WEIGHT = w>MAX_WEIGHT?w:MAX_WEIGHT;
-			MEAN_WEIGHT += w;
-
-		}
-
-		MEAN_WEIGHT /= weights.size();
+		MEAN_WEIGHT /= (weights.size()-padded_kmers);
 
 		C = vector<uint64_t>(5);
 
@@ -357,7 +399,7 @@ public:
 		IN_sel = typename bitv_type::select_1_type(&IN);
 
 		//debug only! prints all the data structures
-		print_all();
+		//print_all();
 
 	}
 
@@ -382,7 +424,7 @@ public:
 	 */
 	uint64_t weights_size_in_bits(){
 
-		return 0;
+		return 0;//TODO
 
 	}
 
@@ -401,6 +443,15 @@ public:
 	uint64_t number_of_nodes(){
 
 		return OUT_rank(OUT.size());
+
+	}
+
+	/*
+	 * number of nodes (distinct kmers) in the de Bruijn graph. Note: also padded kmers are counted.
+	 */
+	uint64_t number_of_padded_kmers(){
+
+		return padded_kmers;
 
 	}
 
@@ -434,10 +485,66 @@ public:
 
 	}
 
+	/*
+	 * input: node (represented as an integer) and character
+	 * returns: node reached
+	 *
+	 * c cannot be $
+	 *
+	 * WARNING: if node has no out-edge labeled c, the function return the node itself (no move).
+	 *
+	 */
+	uint64_t move_forward(uint64_t node, char c){
+
+		assert(c != '$');
+
+		//starting point in BWT
+		uint64_t start = node == 0 ? 0 : OUT_sel(node-1)+1;
+
+		while(BWT[start] != c && OUT[start] == 0) start++;
+
+		if(BWT[start] == c)
+			node = IN_rank(LF(start));
+
+		return node;
+
+	}
+
+	/*
+	 * input: node (represented as an integer) and rank between 0 and in_degree(node)-1
+	 * returns: node reached by following the k-th incoming edge of the node
+	 *
+	 * node cannot be the root 0 ($$$)
+	 */
+	uint64_t move_backward(uint64_t node, uint8_t k){
+
+		assert(k<in_degree(node));
+		assert(node > 0);
+
+		return OUT_rank(FL((IN_sel(node-1)+1)+k));
+
+	}
+
+
+	/*
+	 * returns the in-degree of the node
+	 * since this is a dBg and there is only one source node ($$$),
+	 * this number is always between 1 and 4
+	 *
+	 */
+	uint8_t in_degree(uint64_t node){
+
+		assert(node<number_of_nodes());
+
+		return IN_sel(node) - (node == 0 ? 0 : IN_sel(node-1)+1) +1;
+
+	}
+
 private:
 
-	uint64_t MAX_WEIGHT;
-	double MEAN_WEIGHT;
+	uint64_t MAX_WEIGHT = 0;
+	double MEAN_WEIGHT = 0;
+	uint64_t padded_kmers = 0;//number of k-mers padded with $
 
 	uint8_t F_int(uint64_t i){
 

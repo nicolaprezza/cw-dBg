@@ -92,13 +92,20 @@ int main(int argc, char** argv){
 	uint64_t elapsed = std::chrono::duration_cast<std::chrono::seconds>(t2 - t1).count();
 	cout << "Done. Build time (hh:mm:ss): " << elapsed/3600 << ":" << (elapsed%3600)/60 << ":" << (elapsed%3600)%60 << endl;
 
-	cout << "Number of nodes " << cwdbg.number_of_nodes() << endl;
+	uint64_t dist_kmers = cwdbg.number_of_nodes()-cwdbg.number_of_padded_kmers();
+
+	cout << "Number of distinct kmers " << dist_kmers << endl;
+	cout << "Number of padded kmers " << cwdbg.number_of_padded_kmers() << endl;
+	cout << "Number of nodes (distinct kmers + padded kmers) " << cwdbg.number_of_nodes() << endl;
 	cout << "Number of edges " << cwdbg.number_of_edges() << endl;
 	cout << "Max weight " << cwdbg.max_weight() << endl;
-	cout << "Mean weight " << cwdbg.mean_weight() << endl;
+	cout << "Mean weight (only on distinct kmers) " << cwdbg.mean_weight() << endl;
 
 	cout << "SPACE: " << endl;
 	cout << "  de Bruijn graph (BOSS): " << double(cwdbg.dbg_size_in_bits())/cwdbg.number_of_edges() << " bits per edge" << endl;
+	cout << "                          " << double(cwdbg.dbg_size_in_bits())/cwdbg.number_of_nodes() << " bits per node" << endl;
+	cout << "                          " << double(cwdbg.dbg_size_in_bits())/dist_kmers << " bits per distinct kmer" << endl;
+
 	cout << "  compressed weights: " << double(cwdbg.weights_size_in_bits())/cwdbg.number_of_edges() << " bits per edge" << endl;
 	cout << "  total: " << double(cwdbg.size_in_bits())/cwdbg.number_of_edges() << " bits per edge" << endl;
 
