@@ -80,15 +80,28 @@ int main(int argc, char** argv){
 	}
 
 	cout << "Building compressed weighted de Bruijn graph of input file " << input_file << endl;
-	cout << "called as: cw-dBg-build " << (format==fasta?"-a ":"") << "-l " << nlines << " -s " << srate << " " << input_file << " " << k << endl;
+	cout << "called as: cw-dBg-build " << (format==fasta?"-a ":"") << "-l " << nlines << " -s " << srate << " " << input_file << " " << int(k) << endl;
 
 	auto t1 = std::chrono::high_resolution_clock::now();
 
-	cw_dBg<> cwdbg(input_file, format, nlines, k, srate, true);
+	//cw_dBg<bit_vector, wt_huff<> > cwdbg(input_file, format, nlines, k, srate, true); //fast - uses uncompressed vectors
+	cw_dBg<> cwdbg(input_file, format, nlines, k, srate, true); //slow but very small - uses rrr-compressed bit-vectors everywhere
 
 	auto t2 = std::chrono::high_resolution_clock::now();
 
 	uint64_t elapsed = std::chrono::duration_cast<std::chrono::seconds>(t2 - t1).count();
 	cout << "Done. Build time (hh:mm:ss): " << elapsed/3600 << ":" << (elapsed%3600)/60 << ":" << (elapsed%3600)%60 << endl;
+
+	cout << "Number of nodes " << cwdbg.number_of_nodes() << endl;
+	cout << "Number of edges " << cwdbg.number_of_edges() << endl;
+	cout << "Max weight " << cwdbg.max_weight() << endl;
+	cout << "Mean weight " << cwdbg.mean_weight() << endl;
+
+	cout << "SPACE: " << endl;
+	cout << "  de Bruijn graph (BOSS): " << double(cwdbg.dbg_size_in_bits())/cwdbg.number_of_edges() << " bits per edge" << endl;
+	cout << "  compressed weights: " << double(cwdbg.weights_size_in_bits())/cwdbg.number_of_edges() << " bits per edge" << endl;
+	cout << "  total: " << double(cwdbg.size_in_bits())/cwdbg.number_of_edges() << " bits per edge" << endl;
+
+
 
 }

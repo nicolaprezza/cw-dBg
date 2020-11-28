@@ -204,8 +204,8 @@ public:
 
 					//we set to 0 the counters of kmers that contain $
 					count = has_dollars(prev_kmer)?0:count;
-					weights.push_back(count);
-					count = 1;
+					weights.push_back(count); //I'm pushing the weight of the previous kmer
+					count = 1; //start counting weight of this new kmer
 
 					BWT_.push_back(toCHAR(kmers[i] & __uint128_t(7)));//append to BWT first outgoing edge of this new kmer
 					OUT_.push_back(true);//mark that this BWT char is the first of the new kmer
@@ -214,10 +214,13 @@ public:
 
 					count++;
 
-					//if char of outgoing edge has changed
-					if( (kmers[i] & __uint128_t(7)) != (prev_kmer & __uint128_t(7)) ){
+					uint8_t curr_char = kmers[i] & __uint128_t(7);
+					uint8_t prev_char = prev_kmer & __uint128_t(7);
 
-						BWT_.push_back(toCHAR(kmers[i] & __uint128_t(7)));
+					//if char of outgoing edge has changed
+					if( curr_char != prev_char ){
+
+						BWT_.push_back(toCHAR(curr_char));
 						OUT_.push_back(false);//mark that this BWT char is NOT the first of the current kmer
 						last.push_back(false);//mark that this BWT char is NOT the first of the current (k-1)-mer
 
@@ -229,16 +232,28 @@ public:
 
 			}
 
+			weights.push_back(count);//push back weight of the lasst kmer
 			assert(OUT_.size() == BWT_.length());
 			assert(last.size() == BWT_.length());
 
 		}//end scope of vector<__uint128_t> kmers;
 
+
+		MAX_WEIGHT = 0;
+		for(auto w:weights){
+
+			MAX_WEIGHT = w>MAX_WEIGHT?w:MAX_WEIGHT;
+			MEAN_WEIGHT += w;
+
+		}
+
+		MEAN_WEIGHT /= weights.size();
+
 		C = vector<uint64_t>(5);
 
 		for(auto c : BWT_) C[toINT(c)]++;
 
-		C[0] = 1;
+		C[0] = 1;//there is one $ in the F column (it's the only incoming edge of the root kmer $$$)
 		C[1] += C[0];
 		C[2] += C[1];
 		C[3] += C[2];
@@ -248,6 +263,7 @@ public:
 		C[3] = C[2];
 		C[2] = C[1];
 		C[1] = C[0];
+		C[0] = 0; //$ starts at position 0 in the F column
 
 		if(verbose)
 			cout << "Done. Indexing all structures ..." << endl;
@@ -276,9 +292,11 @@ public:
 		OUT_rank = typename bitv_type::rank_1_type(&OUT);
 		OUT_sel = typename bitv_type::select_1_type(&OUT);
 
+		assert(weights.size() == OUT_rank(OUT.size()));
+
 		{
 
-			//flip bits in last so that they mark the last (not first) edge of each kmer
+			//flip bits in last so that they mark the last (not first) edge of each (k-1)-mer
 			for(uint64_t i=0;i<last.size()-1;++i){
 
 				last[i] = false;
@@ -287,12 +305,47 @@ public:
 			}
 			last[last.size()-1] = true;
 
-			bit_vector IN_(BWT.size() - BWT.rank(BWT.size(),'$'), false);
+			/*
+			 * IN_ will mark with a bit set the last incoming edge of each k-mer
+			 * we add 1 because the root kmer $$$ for convention has 1 incoming edge $
+			 * (is the only kmer with incoming edge labeled $)
+			 *
+			 * to discover how many incoming edges there are, we subtract the number of $
+			 * from the BWT size
+			 */
+			//
+			bit_vector IN_(BWT.size() - BWT.rank(BWT.size(),'$')+1, false);
+
+			IN_[0] = true;
+
+			uint64_t cluster_start = 0;//beginning of the current cluster of the (k-1)-mer
 
 			for(uint64_t i=0;i<last.size();++i){
 
-				if(last[i])
-					IN_[LF(i)] = true;
+				if(last[i]){//we've found the end of the cluster
+
+					//find previous occurrence of each letter
+					uint64_t rn_A = BWT.rank(i+1,'A');
+					uint64_t last_A = rn_A == 0?BWT.size():BWT.select(rn_A,'A');
+
+					uint64_t rn_C = BWT.rank(i+1,'C');
+					uint64_t last_C = rn_C == 0?BWT.size():BWT.select(rn_C,'C');
+
+					uint64_t rn_G = BWT.rank(i+1,'G');
+					uint64_t last_G = rn_G == 0?BWT.size():BWT.select(rn_G,'G');
+
+					uint64_t rn_T = BWT.rank(i+1,'T');
+					uint64_t last_T = rn_T == 0?BWT.size():BWT.select(rn_T,'T');
+
+					//if the last occurrence of the letter is inside the cluster, then we mark it in the F column
+					if(last_A >= cluster_start and last_A <= i) IN_[LF(last_A)] = true;
+					if(last_C >= cluster_start and last_C <= i) IN_[LF(last_C)] = true;
+					if(last_G >= cluster_start and last_G <= i) IN_[LF(last_G)] = true;
+					if(last_T >= cluster_start and last_T <= i) IN_[LF(last_T)] = true;
+
+					cluster_start = i+1; //in the next position a new cluster starts
+
+				}
 
 			}
 
@@ -303,11 +356,88 @@ public:
 		IN_rank = typename bitv_type::rank_1_type(&IN);
 		IN_sel = typename bitv_type::select_1_type(&IN);
 
+		//debug only! prints all the data structures
+		print_all();
 
+	}
+
+	/*
+	 * size of the de Bruijn graph
+	 */
+	uint64_t dbg_size_in_bits(){
+
+		return	8*((size_in_mega_bytes(BWT) +
+				size_in_mega_bytes(IN) +
+				size_in_mega_bytes(IN_rank) +
+				size_in_mega_bytes(IN_sel) +
+				size_in_mega_bytes(OUT) +
+				size_in_mega_bytes(OUT_rank) +
+				size_in_mega_bytes(OUT_sel))*(uint64_t(1)<<20) +
+				C.capacity() * 8);
+
+	}
+
+	/*
+	 * size (Bytes) of the compressed weights
+	 */
+	uint64_t weights_size_in_bits(){
+
+		return 0;
+
+	}
+
+	/*
+	 * total size (Bytes) of the data structure
+	 */
+	uint64_t size_in_bits(){
+
+		return dbg_size_in_bits() + weights_size_in_bits();
+
+	}
+
+	/*
+	 * number of nodes (distinct kmers) in the de Bruijn graph. Note: also padded kmers are counted.
+	 */
+	uint64_t number_of_nodes(){
+
+		return OUT_rank(OUT.size());
+
+	}
+
+	/*
+	 * number of edges in the de Bruijn graph. Dummy edges labeled $ are ignored.
+	 */
+	uint64_t number_of_edges(){
+
+		return BWT.size() - BWT.rank(BWT.size(),'$');
+
+	}
+
+	uint64_t max_weight(){
+
+		return MAX_WEIGHT;
+
+	}
+
+	double mean_weight(){
+
+		return MEAN_WEIGHT;
+
+	}
+
+	/*
+	 * first column of the BWT matrix
+	 */
+	char F(uint64_t i){
+
+		return toCHAR(F_int(i));
 
 	}
 
 private:
+
+	uint64_t MAX_WEIGHT;
+	double MEAN_WEIGHT;
 
 	uint8_t F_int(uint64_t i){
 
@@ -317,12 +447,6 @@ private:
 				 i>=C[4]            ? 4 : 0;
 
 		return c;
-
-	}
-
-	char F(uint64_t i){
-
-		return toCHAR(F_int(i));
 
 	}
 
@@ -343,6 +467,28 @@ private:
 		uint8_t  c = F_int(i);
 
 		return BWT.select((i-C[c])+1,toCHAR(c));
+
+	}
+
+	/*
+	 * for debug only: prints all structures
+	 */
+	void print_all(){
+
+		cout << "BOSS: " << endl;
+
+		for(auto b : IN) cout << int(b);
+		cout << endl;
+
+		for(int i=0;i<BWT.size();++i)
+			cout << F(i);
+		cout << endl;
+
+		for(auto c : BWT) cout << c;
+		cout << endl;
+
+		for(auto b : OUT) cout << int(b);
+		cout << endl;
 
 	}
 
