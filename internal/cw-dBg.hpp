@@ -399,7 +399,7 @@ public:
 		IN_sel = typename bitv_type::select_1_type(&IN);
 
 		//debug only! prints all the data structures
-		//print_all();
+		print_all();
 
 	}
 
@@ -424,7 +424,12 @@ public:
 	 */
 	uint64_t weights_size_in_bits(){
 
-		return 0;//TODO
+		return	8*((size_in_mega_bytes(deltas) +
+				size_in_mega_bytes(mst) +
+				size_in_mega_bytes(mst_rank) +
+				size_in_mega_bytes(sampled) +
+				size_in_mega_bytes(sampled_rank) +
+				size_in_mega_bytes(samples))*(uint64_t(1)<<20));
 
 	}
 
@@ -438,7 +443,7 @@ public:
 	}
 
 	/*
-	 * number of nodes (distinct kmers) in the de Bruijn graph. Note: also padded kmers are counted.
+	 * number of nodes (distinct kmers + padded kmers) in the de Bruijn graph. Note: also padded kmers are counted.
 	 */
 	uint64_t number_of_nodes(){
 
@@ -452,6 +457,12 @@ public:
 	uint64_t number_of_padded_kmers(){
 
 		return padded_kmers;
+
+	}
+
+	uint64_t number_of_distinct_kmers(){
+
+		return number_of_nodes() - padded_kmers;
 
 	}
 
@@ -486,27 +497,86 @@ public:
 	}
 
 	/*
+	 * returns node corresponding to input kmer (as string)
+	 *
+	 * if kmer does not exist, returns number_of_nodes()
+	 *
+	 */
+	uint64_t find_kmer(string& kmer){
+
+		assert(kmer.length()==k);
+
+		auto range = full_range();
+
+		for(auto c : kmer){
+
+			//cout << "range: " << range.first << " " << range.second << endl;
+			range = LF(range,c);
+
+		}
+
+		//cout << "range: " << range.first << " " << range.second << endl;
+
+		if(range.second != range.first+1)
+			return number_of_nodes();
+
+		return range.first;
+
+	}
+
+	uint32_t abundance(string& kmer){
+
+		auto idx = find_kmer(kmer);
+
+		return idx == number_of_nodes()?0:0; //TODO
+
+	}
+
+	/*
 	 * input: node (represented as an integer) and character
 	 * returns: node reached
 	 *
+	 * if node has no out-edge labeled c, the function returns number_of_nodes()
+	 *
 	 * c cannot be $
 	 *
-	 * WARNING: if node has no out-edge labeled c, the function return the node itself (no move).
-	 *
 	 */
-	uint64_t move_forward(uint64_t node, char c){
+	uint64_t move_forward_by_char(uint64_t node, char c){
 
 		assert(c != '$');
 
+		uint64_t nodes = number_of_nodes();
+
+		assert(node <= nodes);
+
+		if(node == nodes) return node;
+
 		//starting point in BWT
-		uint64_t start = node == 0 ? 0 : OUT_sel(node-1)+1;
+		uint64_t start = node == 0 ? 0 : OUT_sel(node)+1;
 
 		while(BWT[start] != c && OUT[start] == 0) start++;
 
 		if(BWT[start] == c)
 			node = IN_rank(LF(start));
+		else
+			node = nodes;
 
 		return node;
+
+	}
+
+	/*
+	 * input: node (represented as an integer) and rank between 0 and out_degree(node)-1
+	 * returns: node reached by following the k-th outgoing edge of the node
+	 *
+	 */
+	uint64_t move_forward_by_rank(uint64_t node, uint8_t k){
+
+		assert(k<out_degree(node));
+
+		uint64_t pos = node==0?0:OUT_sel(node)+1;
+
+		return IN_rank(LF(pos+k));
 
 	}
 
@@ -521,10 +591,9 @@ public:
 		assert(k<in_degree(node));
 		assert(node > 0);
 
-		return OUT_rank(FL((IN_sel(node-1)+1)+k));
+		return OUT_rank(FL((IN_sel(node)+1)+k));
 
 	}
-
 
 	/*
 	 * returns the in-degree of the node
@@ -536,8 +605,28 @@ public:
 
 		assert(node<number_of_nodes());
 
-		return IN_sel(node) - (node == 0 ? 0 : IN_sel(node-1)+1) +1;
+		return IN_sel(node+1) - (node == 0 ? 0 : IN_sel(node)+1) +1;
 
+	}
+
+	/*
+	 * returns the out-degree of the node
+	 * this number is always between 0 and 4
+	 *
+	 */
+	uint8_t out_degree(uint64_t node){
+
+		assert(node<number_of_nodes());
+
+		return OUT_sel(node+1) - (node == 0 ? 0 : OUT_sel(node)+1) +1;
+
+	}
+
+	/*
+	 * the source of the de Bruijn graph (i.e. node $$$)
+	 */
+	uint64_t source(){
+		return 0;
 	}
 
 private:
@@ -564,6 +653,40 @@ private:
 		assert(c!='$');
 
 		return C[toINT(c)] + BWT.rank(i,c);
+
+	}
+
+	pair<uint64_t, uint64_t> full_range(){
+		return {0,number_of_nodes()};
+	}
+
+	/*
+	 * LF function. Input: range OF NODES [begin, end) of nodes reached by path P, and char c
+	 * output: nodes reached by path Pc.
+	 *
+	 * output is an empty range (end <= begin) if input is an empty range or if Pc does not occur
+	 *
+	 */
+	pair<uint64_t, uint64_t> LF(pair<uint64_t, uint64_t> range, char c){
+
+		assert(c!='$');
+
+		uint64_t begin_on_BWT = range.first == 0 ? 0 : OUT_sel(range.first)+1; //inclusive
+		uint64_t end_on_BWT = OUT_sel(range.second)+1; //exclusive
+
+		//cout << "begin on BWT: " << begin_on_BWT << " " << end_on_BWT << endl;
+
+		uint64_t c_before_begin = BWT.rank(begin_on_BWT,c);
+		uint64_t c_before_end = BWT.rank(end_on_BWT,c);
+
+		//cout << "c before: " << c_before_begin << " " << c_before_end << endl;
+
+		uint64_t first_on_F = C[toINT(c)] + c_before_begin;
+		uint64_t last_on_F = C[toINT(c)] + c_before_end;
+
+		//cout << "on F " << first_on_F << " " << last_on_F << endl;
+
+		return {IN_rank(first_on_F), IN_rank(last_on_F)};
 
 	}
 

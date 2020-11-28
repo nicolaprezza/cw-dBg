@@ -87,14 +87,26 @@ int main(int argc, char** argv){
 	//cw_dBg<bit_vector, wt_huff<> > cwdbg(input_file, format, nlines, k, srate, true); //fast - uses uncompressed vectors
 	cw_dBg<> cwdbg(input_file, format, nlines, k, srate, true); //slow but very small - uses rrr-compressed bit-vectors everywhere
 
+	/*string km;
+	km = "CGA";	cout << km << " " << cwdbg.find_kmer(km) << " " << cwdbg.abundance(km) << endl;
+	km = "GAC";	cout << km << " " << cwdbg.find_kmer(km) << " " << cwdbg.abundance(km) << endl;
+	km = "TAC";	cout << km << " " << cwdbg.find_kmer(km) << " " << cwdbg.abundance(km) << endl;
+	km = "GTC";	cout << km << " " << cwdbg.find_kmer(km) << " " << cwdbg.abundance(km) << endl;
+	km = "ACG";	cout << km << " " << cwdbg.find_kmer(km) << " " << cwdbg.abundance(km) << endl;
+	km = "TCG";	cout << km << " " << cwdbg.find_kmer(km) << " " << cwdbg.abundance(km) << endl;
+	km = "ACT";	cout << km << " " << cwdbg.find_kmer(km) << " " << cwdbg.abundance(km) << endl;
+	km = "CGT";	cout << km << " " << cwdbg.find_kmer(km) << " " << cwdbg.abundance(km) << endl;
+	km = "AAA";	cout << km << " " << cwdbg.find_kmer(km) << " " << cwdbg.abundance(km) << endl;*/
+
+	//for(int i=0;i<11;++i) cout << i << " " << int(cwdbg.in_degree(i)) << " " << int(cwdbg.out_degree(i)) << endl;
+
+
 	auto t2 = std::chrono::high_resolution_clock::now();
 
 	uint64_t elapsed = std::chrono::duration_cast<std::chrono::seconds>(t2 - t1).count();
 	cout << "Done. Build time (hh:mm:ss): " << elapsed/3600 << ":" << (elapsed%3600)/60 << ":" << (elapsed%3600)%60 << endl;
 
-	uint64_t dist_kmers = cwdbg.number_of_nodes()-cwdbg.number_of_padded_kmers();
-
-	cout << "Number of distinct kmers " << dist_kmers << endl;
+	cout << "Number of distinct kmers " << cwdbg.number_of_distinct_kmers() << endl;
 	cout << "Number of padded kmers " << cwdbg.number_of_padded_kmers() << endl;
 	cout << "Number of nodes (distinct kmers + padded kmers) " << cwdbg.number_of_nodes() << endl;
 	cout << "Number of edges " << cwdbg.number_of_edges() << endl;
@@ -104,11 +116,12 @@ int main(int argc, char** argv){
 	cout << "SPACE: " << endl;
 	cout << "  de Bruijn graph (BOSS): " << double(cwdbg.dbg_size_in_bits())/cwdbg.number_of_edges() << " bits per edge" << endl;
 	cout << "                          " << double(cwdbg.dbg_size_in_bits())/cwdbg.number_of_nodes() << " bits per node" << endl;
-	cout << "                          " << double(cwdbg.dbg_size_in_bits())/dist_kmers << " bits per distinct kmer" << endl;
-
-	cout << "  compressed weights: " << double(cwdbg.weights_size_in_bits())/cwdbg.number_of_edges() << " bits per edge" << endl;
-	cout << "  total: " << double(cwdbg.size_in_bits())/cwdbg.number_of_edges() << " bits per edge" << endl;
-
-
+	cout << "                          " << double(cwdbg.dbg_size_in_bits())/cwdbg.number_of_distinct_kmers() << " bits per distinct kmer" << endl;
+	cout << "  compressed weights:     " << double(cwdbg.weights_size_in_bits())/cwdbg.number_of_edges() << " bits per edge" << endl;
+	cout << "                          " << double(cwdbg.weights_size_in_bits())/cwdbg.number_of_nodes() << " bits per node" << endl;
+	cout << "                          " << double(cwdbg.weights_size_in_bits())/cwdbg.number_of_distinct_kmers() << " bits per distinct kmer" << endl;
+	cout << "  total:                  " << double(cwdbg.size_in_bits())/cwdbg.number_of_edges() << " bits per edge" << endl;
+	cout << "                          " << double(cwdbg.size_in_bits())/cwdbg.number_of_nodes() << " bits per node" << endl;
+	cout << "                          " << double(cwdbg.size_in_bits())/cwdbg.number_of_distinct_kmers() << " bits per distinct kmer" << endl<<endl;
 
 }
