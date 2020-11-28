@@ -118,6 +118,7 @@ public:
 			cout << "Computing how much memory I need to allocate ..." << endl;
 
 		uint64_t pre_allocation = 0;
+		uint64_t tot_bases = 0;
 
 		{
 			//count how many kmers we will generate (one per base)
@@ -131,6 +132,7 @@ public:
 				getline(file, str);//getline reads DNA
 
 				pre_allocation += str.length()+1;
+				tot_bases += str.length();
 
 				if(format == fastq){
 					getline(file, str);//getline reads +
@@ -151,8 +153,10 @@ public:
 
 			ifstream file(filename);
 
-			if(verbose)
-				cout << "Done. Trying to allocate " << pre_allocation*16 << " Bytes ... " << endl;
+			if(verbose){
+				cout << "Done. Number of bases: " << tot_bases << endl;
+				cout << "Trying to allocate " << pre_allocation*16 << " Bytes ... " << endl;
+			}
 
 			int read_lines=0;
 
@@ -399,7 +403,7 @@ public:
 		IN_sel = typename bitv_type::select_1_type(&IN);
 
 		//debug only! prints all the data structures
-		print_all();
+		//print_all();
 
 	}
 

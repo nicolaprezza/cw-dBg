@@ -110,8 +110,8 @@ int main(int argc, char** argv){
 	cout << "Number of padded kmers " << cwdbg.number_of_padded_kmers() << endl;
 	cout << "Number of nodes (distinct kmers + padded kmers) " << cwdbg.number_of_nodes() << endl;
 	cout << "Number of edges " << cwdbg.number_of_edges() << endl;
-	cout << "Max weight " << cwdbg.max_weight() << endl;
-	cout << "Mean weight (only on distinct kmers) " << cwdbg.mean_weight() << endl;
+	cout << "Max abundance " << cwdbg.max_weight() << endl;
+	cout << "Mean abundance (only on distinct kmers) " << cwdbg.mean_weight() << endl;
 
 	cout << "SPACE: " << endl;
 	cout << "  de Bruijn graph (BOSS): " << double(cwdbg.dbg_size_in_bits())/cwdbg.number_of_edges() << " bits per edge" << endl;
