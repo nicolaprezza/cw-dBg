@@ -15,6 +15,7 @@
 #include <sdsl/wavelet_trees.hpp>
 #include <vector>
 #include <algorithm>
+#include <stack>
 
 using namespace sdsl;
 using namespace std;
@@ -38,7 +39,7 @@ uint8_t toINT(char c){
 
 	}
 
-	return 0;
+	return 1;//this includes 'N' characters.
 }
 
 //inverse of the above
@@ -59,12 +60,34 @@ char toCHAR(uint8_t x){
 }
 
 /*
- * input: edge (XYZ,W) stored as integer of 128 bits (see "format example" below), character Q stored in 3 bits (function toINT), and order k
- * output: edge (YZW,Q)
+ * input: edge (XYZ,W) stored as integer of 128 bits (see "format example" below), character c stored in 3 bits (see function toINT), and order k
+ * output: edge (YZW,c)
  */
 __uint128_t edge(__uint128_t kmer, uint8_t c, uint8_t k){
 
 	return (((kmer >> 3) | ((kmer & __uint128_t(7))<<(3*k))) & (~__uint128_t(7))) | c;
+
+}
+
+string kmer_to_str(__uint128_t kmer, int k){
+
+	char edge = toCHAR(kmer & __uint128_t(7));
+
+	string km;
+
+	kmer = kmer >> 3;
+
+	for(int i=0;i<k;++i){
+
+		km += toCHAR(kmer & __uint128_t(7));
+		kmer = kmer >> 3;
+
+	}
+
+	km += "|";
+	km += edge;
+
+	return km;
 
 }
 
@@ -179,7 +202,12 @@ public:
 				// start processing DNA fragment
 
 				//first kmer: ($$$,C), where C is the first letter of str
-				__uint128_t kmer = toINT(str[0]);
+
+				uint8_t first_char = toINT(str[0]);
+
+				//if(first_char==0) cout << str<<endl;
+				assert(first_char!=0);
+				__uint128_t kmer = first_char;
 
 				kmers.push_back(kmer);
 
@@ -223,22 +251,32 @@ public:
 
 			uint32_t count = 1;
 
+			int n_nodes = 0;
+
+			//cout << "----" << (n_nodes++) << endl;
+
+			//cout << kmer_to_str(kmers[0],k) << " " << last[0] << endl;
+
 			for(uint64_t i = 1; i<kmers.size();++i){
-
-				//if (k-1)-mer changes (we will also push in BWT since automatically also the k-mer changes)
-				if((kmers[i]>>6) != (prev_kmer>>6)){
-
-					last.push_back(true);
-
-				}
 
 				//if kmer changes: we've already appended edges letter, it's time to append the weight
 				if((kmers[i]>>3) != (prev_kmer>>3)){
+
+					//cout << "----" << (n_nodes++) << endl;
+
+					//cout << kmer_to_str(kmers[i],k);
 
 					//if (k-1)-mer stays the same
 					if((kmers[i]>>6) == (prev_kmer>>6)){
 
 						last.push_back(false);
+
+						//cout << " 0" << endl;
+
+					}else{
+
+						last.push_back(true);
+						//cout << " 1" << endl;
 
 					}
 
@@ -268,9 +306,13 @@ public:
 					//if char of outgoing edge has changed
 					if( curr_char != prev_char ){
 
+						//cout << kmer_to_str(kmers[i],k);
+
 						BWT_.push_back(toCHAR(curr_char));
 						OUT_.push_back(false);//mark that this BWT char is NOT the first of the current kmer
 						last.push_back(false);//mark that this BWT char is NOT the first of the current (k-1)-mer
+
+						//cout << " 0" << endl;
 
 					}
 
@@ -351,10 +393,11 @@ public:
 			}
 			last[last.size()-1] = true;
 
+
 			/*
 			 * IN_ will mark with a bit set the last incoming edge of each k-mer
 			 * we add 1 because the root kmer $$$ for convention has 1 incoming edge $
-			 * (is the only kmer with incoming edge labeled $)
+			 * (it is the only kmer with incoming edge labeled $)
 			 *
 			 * to discover how many incoming edges there are, we subtract the number of $
 			 * from the BWT size
@@ -372,22 +415,26 @@ public:
 
 					//find previous occurrence of each letter
 					uint64_t rn_A = BWT.rank(i+1,'A');
+					assert(rn_A<=BWT.rank(BWT.size(),'A'));
 					uint64_t last_A = rn_A == 0?BWT.size():BWT.select(rn_A,'A');
 
 					uint64_t rn_C = BWT.rank(i+1,'C');
+					assert(rn_C<=BWT.rank(BWT.size(),'C'));
 					uint64_t last_C = rn_C == 0?BWT.size():BWT.select(rn_C,'C');
 
 					uint64_t rn_G = BWT.rank(i+1,'G');
+					assert(rn_G<=BWT.rank(BWT.size(),'G'));
 					uint64_t last_G = rn_G == 0?BWT.size():BWT.select(rn_G,'G');
 
 					uint64_t rn_T = BWT.rank(i+1,'T');
+					assert(rn_T<=BWT.rank(BWT.size(),'T'));
 					uint64_t last_T = rn_T == 0?BWT.size():BWT.select(rn_T,'T');
 
 					//if the last occurrence of the letter is inside the cluster, then we mark it in the F column
-					if(last_A >= cluster_start and last_A <= i) IN_[LF(last_A)] = true;
-					if(last_C >= cluster_start and last_C <= i) IN_[LF(last_C)] = true;
-					if(last_G >= cluster_start and last_G <= i) IN_[LF(last_G)] = true;
-					if(last_T >= cluster_start and last_T <= i) IN_[LF(last_T)] = true;
+					if(last_A >= cluster_start and last_A <= i){ assert(not IN_[LF(last_A)]); IN_[LF(last_A)] = true;};
+					if(last_C >= cluster_start and last_C <= i){ assert(not IN_[LF(last_C)]); IN_[LF(last_C)] = true;};
+					if(last_G >= cluster_start and last_G <= i){ assert(not IN_[LF(last_G)]); IN_[LF(last_G)] = true;};
+					if(last_T >= cluster_start and last_T <= i){ assert(not IN_[LF(last_T)]); IN_[LF(last_T)] = true;};
 
 					cluster_start = i+1; //in the next position a new cluster starts
 
@@ -402,8 +449,24 @@ public:
 		IN_rank = typename bitv_type::rank_1_type(&IN);
 		IN_sel = typename bitv_type::select_1_type(&IN);
 
+		//cout << IN_rank(IN.size()) << " " << number_of_nodes() << endl;
+		assert(IN_rank(IN.size()) == number_of_nodes());
+
 		//debug only! prints all the data structures
 		//print_all();
+
+
+		//optimization: remove unnecessary padded nodes
+
+		auto nr_padded_kmers = number_of_padded_kmers();
+
+		if(verbose)
+			cout << "Done. Pruning unnecessary padded nodes ..." << endl;
+
+		prune();
+
+		if(verbose)
+			cout << "Done. " << (number_of_padded_kmers()-nr_padded_kmers) << " on a total of " << nr_padded_kmers << " padded kmers have been removed." << endl;
 
 	}
 
@@ -585,6 +648,21 @@ public:
 	}
 
 	/*
+	 * input: node (represented as an integer) and rank between 0 and out_degree(node)-1
+	 * returns: label of k-th outgoing edge of the node
+	 *
+	 */
+	char out_label(uint64_t node, uint8_t k){
+
+		assert(k<out_degree(node));
+
+		uint64_t pos = node==0?0:OUT_sel(node)+1;
+
+		return BWT[pos+k];
+
+	}
+
+	/*
 	 * input: node (represented as an integer) and rank between 0 and in_degree(node)-1
 	 * returns: node reached by following the k-th incoming edge of the node
 	 *
@@ -593,9 +671,17 @@ public:
 	uint64_t move_backward(uint64_t node, uint8_t k){
 
 		assert(k<in_degree(node));
-		assert(node > 0);
+		assert(in_degree(node)>0);
 
-		return OUT_rank(FL((IN_sel(node)+1)+k));
+		assert(node > 0);
+		assert(node < number_of_nodes());
+		assert(IN_sel(node)+1 < IN.size());
+
+		uint64_t idx = IN_sel(node)+1+k;
+
+		assert(idx<IN.size());
+
+		return OUT_rank(FL(idx));
 
 	}
 
@@ -697,10 +783,17 @@ private:
 	uint64_t FL(uint64_t i){
 
 		assert(i>0);
+		assert(i<IN.size());
 
 		uint8_t  c = F_int(i);
 
-		return BWT.select((i-C[c])+1,toCHAR(c));
+		assert(i>=C[c]);
+
+		uint64_t sel = (i-C[c])+1;
+		char ch = toCHAR(c);
+
+		assert(sel<=BWT.rank(BWT.size(),ch));
+		return BWT.select(sel,ch);
 
 	}
 
@@ -723,6 +816,91 @@ private:
 
 		for(auto b : OUT) cout << int(b);
 		cout << endl;
+
+	}
+
+	/*
+	 * removes all the unnecessary padded nodes. The problem with dBgs over read sets is that we add k padded nodes
+	 * for each read. Many of these however are not necessary if the dBg is well connected. In particular, only sources
+	 * in the dBg (entry points in the connected components) need padded nodes, and those are few.
+	 */
+	void prune(){
+
+		//mark all padded nodes
+		vector<bool> padded(number_of_nodes(),false);
+
+		//nodes that are necessary (not to be deleted)
+		vector<bool> necessary_node(number_of_nodes(),false);
+
+		//mark elements in BWT/OUT and IN
+		vector<bool> remove_out(OUT.size(),false);
+		vector<bool> remove_in(IN.size(),false);
+
+		{
+			//find all nodes that are within distance k-1 from root (i.e. all padded nodes)
+
+			//pairs <node, distance from root>
+			stack<pair<uint64_t, uint8_t> > S;
+			S.push({0,0}); //push the root
+
+			while(not S.empty()){
+
+				auto p = S.top();
+				uint64_t n = p.first;
+				uint8_t d = p.second;
+
+				S.pop();
+
+				padded[n] = true;
+
+				for(uint8_t i = 0; i < out_degree(n) && d<k-1 && out_label(n,i) != '$' ;++i){
+
+					S.push({move_forward_by_rank(n,i),d+1});
+
+				}
+
+			}
+
+		}
+
+		//now, for each non-padded kmer X that is preceded only by a padded kmer (i.e. a source of the dBg),
+		//mark as necessary all padded kmers that lead from the root to X
+
+		necessary_node[0] = true;
+
+		for(uint64_t n = 0; n<number_of_nodes();++n){
+
+			if(not padded[n]) necessary_node[n] = true;
+
+			uint64_t node;
+			if(not padded[n] && in_degree(n)==1 && padded[node = move_backward(n,0)]){
+
+				while(node != 0){
+
+					necessary_node[node] = true;
+					assert(in_degree(node) == 1); //all padded nodes have in-degree 1
+					node = move_backward(node,0);
+
+				}
+
+			}
+
+		}
+
+		uint64_t necessary_nodes = 0;
+
+		for(uint64_t n = 0; n<number_of_nodes();++n)
+			necessary_nodes += necessary_node[n];
+
+		cout << necessary_nodes  << " over " << number_of_nodes() << " are really necessary " << endl;
+
+
+
+		//TODO update padded_kmers
+
+
+
+
 
 	}
 

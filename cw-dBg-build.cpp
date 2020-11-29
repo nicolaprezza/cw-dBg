@@ -12,15 +12,18 @@ uint64_t nlines = 0;
 
 format_t format = fastq;
 
+bool pause_ = false;
+
 void help(){
 	cout << "cw-dBg-build: builds the compressed weighted de Bruijn graph." << endl << endl;
 	cout << "Usage: cw-dBg-build [options] <input> <k>" << endl;
 	cout << "   Options:"<<endl;
-	cout << "   -l <nlines>         use only the first nlines sequences from the input file to build the graph. If set to 0, use all lines. Default: 0."<<endl;
-	cout << "   -a                  the input file is fasta. If not specified, it is assumed that the input file is fastq."<<endl;
-	cout << "   -s <srate>          sample one out of srate weights. Default: 50."<<endl;
-	cout << "   <input>             input fasta/fastq file (see option -a). Mandatory."<<endl;
-	cout << "   <k>                 order of the de Bruijn graph in [1,41]. Mandatory."<<endl;
+	cout << "   -l <nlines>         Use only the first nlines sequences from the input file to build the graph. If set to 0, use all lines. Default: 0."<<endl;
+	cout << "   -s <srate>          Sample one out of srate weights. Default: 50."<<endl;
+	cout << "   -a                  The input file is fasta. If not specified, it is assumed that the input file is fastq."<<endl;
+	cout << "   -p                  Pause exectution before and after construction in order to allow measuring RAM."<<endl;
+	cout << "   <input>             Input fasta/fastq file (see option -a). Mandatory."<<endl;
+	cout << "   <k>                 Order of the de Bruijn graph in [1,41]. Mandatory."<<endl;
 	exit(0);
 }
 
@@ -43,6 +46,10 @@ void parse_args(char** argv, int argc, int &ptr){
 	}else if(s.compare("-a")==0){
 
 		format = fasta;
+
+	}else if(s.compare("-p")==0){
+
+		pause_ = true;
 
 	}else if(s.compare("-s")==0){
 
@@ -82,6 +89,13 @@ int main(int argc, char** argv){
 	cout << "Building compressed weighted de Bruijn graph of input file " << input_file << endl;
 	cout << "called as: cw-dBg-build " << (format==fasta?"-a ":"") << "-l " << nlines << " -s " << srate << " " << input_file << " " << int(k) << endl;
 
+	if(pause_){
+
+		cout << "Paused: construction has to start. Press enter to continue" << endl;
+		cin.ignore();
+
+	}
+
 	auto t1 = std::chrono::high_resolution_clock::now();
 
 	//cw_dBg<bit_vector, wt_huff<> > cwdbg(input_file, format, nlines, k, srate, true); //fast - uses uncompressed vectors
@@ -100,8 +114,14 @@ int main(int argc, char** argv){
 
 	//for(int i=0;i<11;++i) cout << i << " " << int(cwdbg.in_degree(i)) << " " << int(cwdbg.out_degree(i)) << endl;
 
-
 	auto t2 = std::chrono::high_resolution_clock::now();
+
+	if(pause_){
+
+		cout << "Paused: construction has ended. Press enter to continue" << endl;
+		cin.ignore();
+
+	}
 
 	uint64_t elapsed = std::chrono::duration_cast<std::chrono::seconds>(t2 - t1).count();
 	cout << "Done. Build time (hh:mm:ss): " << elapsed/3600 << ":" << (elapsed%3600)/60 << ":" << (elapsed%3600)%60 << endl;
