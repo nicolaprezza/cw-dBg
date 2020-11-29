@@ -144,4 +144,39 @@ int main(int argc, char** argv){
 	cout << "                          " << double(cwdbg.size_in_bits())/cwdbg.number_of_nodes() << " bits per node" << endl;
 	cout << "                          " << double(cwdbg.size_in_bits())/cwdbg.number_of_distinct_kmers() << " bits per distinct kmer" << endl<<endl;
 
+
+	//optimization: remove unnecessary padded nodes
+
+	auto t3 = std::chrono::high_resolution_clock::now();
+
+	cout << "Pruning unnecessary padded nodes ..." << endl;
+
+	cwdbg.prune();
+
+	auto t4 = std::chrono::high_resolution_clock::now();
+
+	elapsed = std::chrono::duration_cast<std::chrono::seconds>(t4 - t3).count();
+	cout << "Done. Pruning time (hh:mm:ss): " << elapsed/3600 << ":" << (elapsed%3600)/60 << ":" << (elapsed%3600)%60 << endl;
+
+	cout << "Number of distinct kmers " << cwdbg.number_of_distinct_kmers() << endl;
+	cout << "Number of padded kmers " << cwdbg.number_of_padded_kmers() << endl;
+	cout << "Number of nodes (distinct kmers + padded kmers) " << cwdbg.number_of_nodes() << endl;
+	cout << "Number of edges " << cwdbg.number_of_edges() << endl;
+	cout << "Max abundance " << cwdbg.max_weight() << endl;
+	cout << "Mean abundance (only on distinct kmers) " << cwdbg.mean_weight() << endl;
+
+	cout << "SPACE: " << endl;
+	cout << "  de Bruijn graph (BOSS): " << double(cwdbg.dbg_size_in_bits())/cwdbg.number_of_edges() << " bits per edge" << endl;
+	cout << "                          " << double(cwdbg.dbg_size_in_bits())/cwdbg.number_of_nodes() << " bits per node" << endl;
+	cout << "                          " << double(cwdbg.dbg_size_in_bits())/cwdbg.number_of_distinct_kmers() << " bits per distinct kmer" << endl;
+	cout << "  compressed weights:     " << double(cwdbg.weights_size_in_bits())/cwdbg.number_of_edges() << " bits per edge" << endl;
+	cout << "                          " << double(cwdbg.weights_size_in_bits())/cwdbg.number_of_nodes() << " bits per node" << endl;
+	cout << "                          " << double(cwdbg.weights_size_in_bits())/cwdbg.number_of_distinct_kmers() << " bits per distinct kmer" << endl;
+	cout << "  total:                  " << double(cwdbg.size_in_bits())/cwdbg.number_of_edges() << " bits per edge" << endl;
+	cout << "                          " << double(cwdbg.size_in_bits())/cwdbg.number_of_nodes() << " bits per node" << endl;
+	cout << "                          " << double(cwdbg.size_in_bits())/cwdbg.number_of_distinct_kmers() << " bits per distinct kmer" << endl<<endl;
+
+
+
+
 }

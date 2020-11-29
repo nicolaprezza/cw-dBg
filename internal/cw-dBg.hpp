@@ -456,17 +456,6 @@ public:
 		//print_all();
 
 
-		//optimization: remove unnecessary padded nodes
-
-		auto nr_padded_kmers = number_of_padded_kmers();
-
-		if(verbose)
-			cout << "Done. Pruning unnecessary padded nodes ..." << endl;
-
-		prune();
-
-		if(verbose)
-			cout << "Done. " << (number_of_padded_kmers()-nr_padded_kmers) << " on a total of " << nr_padded_kmers << " padded kmers have been removed." << endl;
 
 	}
 
@@ -701,7 +690,7 @@ public:
 
 	/*
 	 * returns the out-degree of the node
-	 * this number is always between 0 and 4
+	 * this number is always between 0 and 5 (count also $ if present)
 	 *
 	 */
 	uint8_t out_degree(uint64_t node){
@@ -717,6 +706,246 @@ public:
 	 */
 	uint64_t source(){
 		return 0;
+	}
+
+
+	/*
+	 * removes all the unnecessary padded nodes. The problem with dBgs over read sets is that we add k padded nodes
+	 * for each read. Many of these however are not necessary if the dBg is well connected. In particular, only sources
+	 * in the dBg (entry points in the connected components) need padded nodes, and those are few.
+	 */
+	void prune(){
+
+		//mark all padded nodes
+		vector<bool> padded(number_of_nodes(),false);
+
+		//nodes that are necessary (not to be deleted)
+		vector<bool> necessary_node(number_of_nodes(),false);
+
+		//mark elements in BWT/OUT and IN
+		vector<bool> remove_from_bwt(BWT.size(),false);
+		vector<bool> remove_from_in(IN.size(),false);
+
+		{
+			//find all nodes that are within distance k-1 from root (i.e. all padded nodes)
+
+			//pairs <node, distance from root>
+			stack<pair<uint64_t, uint8_t> > S;
+			S.push({0,0}); //push the root
+
+			while(not S.empty()){
+
+				auto p = S.top();
+				uint64_t n = p.first;
+				uint8_t d = p.second;
+
+				S.pop();
+
+				padded[n] = true;
+
+				for(uint8_t i = 0; i < out_degree(n) && d<k-1 && out_label(n,i) != '$' ;++i){
+
+					S.push({move_forward_by_rank(n,i),d+1});
+
+				}
+
+			}
+
+		}
+
+		//now, for each non-padded kmer X that is preceded only by a padded kmer (i.e. a source of the dBg),
+		//mark as necessary all padded kmers that lead from the root to X
+
+		necessary_node[0] = true;
+
+		for(uint64_t n = 0; n<number_of_nodes();++n){
+
+			if(not padded[n]) necessary_node[n] = true;
+
+			uint64_t node;
+			if(not padded[n] && in_degree(n)==1 && padded[node = move_backward(n,0)]){
+
+				while(node != 0 and not necessary_node[node]){
+
+					necessary_node[node] = true;
+					assert(in_degree(node) == 1); //all padded nodes have in-degree 1
+					node = move_backward(node,0);
+
+				}
+
+			}
+
+		}
+
+		//update padded_kmers
+		padded_kmers = 0;
+		for(uint64_t i=0;i<number_of_nodes();++i)
+			padded_kmers += padded[i] and necessary_node[i];
+
+		//cout << padded_kmers << endl;
+
+		/*uint64_t necessary_nodes = 0;
+
+		for(uint64_t n = 0; n<number_of_nodes();++n)
+			necessary_nodes += necessary_node[n];
+
+		cout << necessary_nodes  << " over " << number_of_nodes() << " are really necessary " << endl;*/
+
+		uint64_t pos_in_bwt = 0;
+		uint64_t pos_in_in = 0;
+
+		for(uint64_t n = 0;n<number_of_nodes();++n){
+
+			auto in_deg = in_degree(n);
+			auto out_deg = out_degree(n);
+
+			//if the BWT has more than 1 outgoing edge, remove the one labeled $
+			//(because we only need it when the out-degree of a node is 0)
+			if(out_deg > 1 and BWT[pos_in_bwt]=='$')
+				remove_from_bwt[pos_in_bwt] = true;
+
+			for(uint8_t off = 0; off < out_deg;++off){
+
+				/*
+				 * remove outgoing edges either if:
+				 * - the node is not necessary or
+				 * - the node the edge leads to is not necessary
+				 */
+				if(not necessary_node[n] or (BWT[pos_in_bwt+off]!='$' && not necessary_node[move_forward_by_rank(n,off)]))
+					remove_from_bwt[pos_in_bwt+off] = true;
+
+			}
+
+			for(uint8_t off = 0; off < in_deg;++off){
+
+				/*
+				 * remove incoming edges either if:
+				 * - the node is not necessary or
+				 * - the node the edge leads to is not necessary
+				 */
+				if(not necessary_node[n] or (n>0 && not necessary_node[move_backward(n,off)]))
+					remove_from_in[pos_in_in+off] = true;
+
+			}
+
+			pos_in_bwt+=out_deg;
+			pos_in_in+=in_deg;
+
+		}
+
+		//compute size of new data structures
+
+		uint64_t new_bwt_len = 0;
+		uint64_t new_IN_len = 0;
+
+		uint64_t nr_nodes = number_of_nodes();
+
+		for(auto b : remove_from_bwt) new_bwt_len += (not b);
+		for(auto b : remove_from_in) new_IN_len += (not b);
+
+		{
+
+			string newBWT;
+			newBWT.reserve(new_bwt_len);
+
+			for(uint64_t i=0;i<BWT.size();++i)
+				if(not remove_from_bwt[i])
+					newBWT.push_back(BWT[i]);
+
+			assert(newBWT.size() == new_bwt_len);
+
+			//re-build BWT
+			BWT = str_type();
+			construct_im(BWT, newBWT.c_str(), 1);
+
+		}
+
+		{
+
+			bit_vector out_bv(new_bwt_len);
+
+			uint64_t idx = 0;
+
+			uint64_t pos_in_bwt = 0;
+
+			for(uint64_t n=0;n<nr_nodes;++n){
+
+				auto out_deg = out_degree(n);
+
+				uint8_t new_out_deg = 0;
+
+				for(uint8_t off = 0; off < out_deg;++off){
+
+					new_out_deg += (not remove_from_bwt[pos_in_bwt++]);
+
+				}
+
+				if(new_out_deg>0){
+
+					for(uint8_t k=0;k<new_out_deg-1;++k) out_bv[idx++]=0;
+					out_bv[idx++]=1;
+
+				}
+
+			}
+
+			OUT = bitv_type(out_bv);
+			OUT_rank = typename bitv_type::rank_1_type(&OUT);
+			OUT_sel = typename bitv_type::select_1_type(&OUT);
+
+		}
+
+		{
+
+			bit_vector in_bv(new_IN_len);
+
+			uint64_t pos_in_in = 0;
+
+			uint64_t idx = 0;
+
+			for(uint64_t n=0;n<nr_nodes;++n){
+
+				auto in_deg = in_degree(n);
+
+				uint8_t new_in_deg = 0;
+
+				for(uint8_t off = 0; off < in_deg;++off){
+
+					new_in_deg += (not remove_from_in[pos_in_in++]);
+
+				}
+
+				if(new_in_deg>0){
+
+					for(uint8_t k=0;k<new_in_deg-1;++k) in_bv[idx++]=0;
+					in_bv[idx++]=1;
+
+				}
+
+			}
+
+			IN = bitv_type(in_bv);
+			IN_rank = typename bitv_type::rank_1_type(&IN);
+			IN_sel = typename bitv_type::select_1_type(&IN);
+
+		}
+
+		C = vector<uint64_t>(5);
+
+		for(auto c : BWT) C[toINT(c)]++;
+
+		C[0] = 1;//there is one $ in the F column (it's the only incoming edge of the root kmer $$$)
+		C[1] += C[0];
+		C[2] += C[1];
+		C[3] += C[2];
+		C[4] += C[3];
+
+		C[4] = C[3];
+		C[3] = C[2];
+		C[2] = C[1];
+		C[1] = C[0];
+		C[0] = 0; //$ starts at position 0 in the F column
+
 	}
 
 private:
@@ -819,90 +1048,7 @@ private:
 
 	}
 
-	/*
-	 * removes all the unnecessary padded nodes. The problem with dBgs over read sets is that we add k padded nodes
-	 * for each read. Many of these however are not necessary if the dBg is well connected. In particular, only sources
-	 * in the dBg (entry points in the connected components) need padded nodes, and those are few.
-	 */
-	void prune(){
 
-		//mark all padded nodes
-		vector<bool> padded(number_of_nodes(),false);
-
-		//nodes that are necessary (not to be deleted)
-		vector<bool> necessary_node(number_of_nodes(),false);
-
-		//mark elements in BWT/OUT and IN
-		vector<bool> remove_out(OUT.size(),false);
-		vector<bool> remove_in(IN.size(),false);
-
-		{
-			//find all nodes that are within distance k-1 from root (i.e. all padded nodes)
-
-			//pairs <node, distance from root>
-			stack<pair<uint64_t, uint8_t> > S;
-			S.push({0,0}); //push the root
-
-			while(not S.empty()){
-
-				auto p = S.top();
-				uint64_t n = p.first;
-				uint8_t d = p.second;
-
-				S.pop();
-
-				padded[n] = true;
-
-				for(uint8_t i = 0; i < out_degree(n) && d<k-1 && out_label(n,i) != '$' ;++i){
-
-					S.push({move_forward_by_rank(n,i),d+1});
-
-				}
-
-			}
-
-		}
-
-		//now, for each non-padded kmer X that is preceded only by a padded kmer (i.e. a source of the dBg),
-		//mark as necessary all padded kmers that lead from the root to X
-
-		necessary_node[0] = true;
-
-		for(uint64_t n = 0; n<number_of_nodes();++n){
-
-			if(not padded[n]) necessary_node[n] = true;
-
-			uint64_t node;
-			if(not padded[n] && in_degree(n)==1 && padded[node = move_backward(n,0)]){
-
-				while(node != 0){
-
-					necessary_node[node] = true;
-					assert(in_degree(node) == 1); //all padded nodes have in-degree 1
-					node = move_backward(node,0);
-
-				}
-
-			}
-
-		}
-
-		uint64_t necessary_nodes = 0;
-
-		for(uint64_t n = 0; n<number_of_nodes();++n)
-			necessary_nodes += necessary_node[n];
-
-		cout << necessary_nodes  << " over " << number_of_nodes() << " are really necessary " << endl;
-
-
-
-		//TODO update padded_kmers
-
-
-
-
-
-	}
 
 	//parameters:
 
