@@ -889,19 +889,11 @@ public:
 
 			}
 
-			OUT = bitv_type(out_bv);
-			OUT_rank = typename bitv_type::rank_1_type(&OUT);
-			OUT_sel = typename bitv_type::select_1_type(&OUT);
-
-		}
-
-		{
-
 			bit_vector in_bv(new_IN_len);
 
 			uint64_t pos_in_in = 0;
 
-			uint64_t idx = 0;
+			idx = 0;
 
 			for(uint64_t n=0;n<nr_nodes;++n){
 
@@ -923,6 +915,10 @@ public:
 				}
 
 			}
+
+			OUT = bitv_type(out_bv);
+			OUT_rank = typename bitv_type::rank_1_type(&OUT);
+			OUT_sel = typename bitv_type::select_1_type(&OUT);
 
 			IN = bitv_type(in_bv);
 			IN_rank = typename bitv_type::rank_1_type(&IN);
