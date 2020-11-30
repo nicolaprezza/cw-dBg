@@ -16,11 +16,14 @@
 #include <vector>
 #include <algorithm>
 #include <stack>
+#include <queue>
 
 using namespace sdsl;
 using namespace std;
 
 namespace dbg{
+
+typedef pair<uint64_t,uint8_t> edge_t;
 
 enum format_t {fasta, fastq};
 
@@ -58,6 +61,77 @@ char toCHAR(uint8_t x){
 	return '$';
 
 }
+
+uint64_t int_to_positive(int w){
+
+	//encode small integers as small positive integers (negative -> odd, positive -> even)
+	return w<0?2*(-w)-1:2*w;
+
+}
+
+//number of bits of x
+uint64_t n_bits(uint64_t x){
+
+	 return 64 - __builtin_clzll(x);
+
+}
+
+//gamma-encoding length of the integer w >= 1
+uint64_t cost_gamma(uint64_t w){
+
+	assert(w>=1);
+	return 2*n_bits(w)-1;
+
+}
+
+
+//delta-encoding length of the integer w >= 1
+uint64_t cost_delta(uint64_t w){
+
+	assert(w>=1);
+	return (n_bits(w)-1) + cost_gamma(n_bits(w));
+
+}
+
+//cost function (bits to represent integer). Input: positive integer >= 0
+uint64_t cost_of_int(uint64_t w){
+
+	assert(w>=0);
+	w += 1; //because gamma and delta can only encode integers >= 1
+	return cost_gamma(w);
+	//return cost_delta(w);
+
+}
+
+
+//the cost of a (possibly negative) weight, i.e. the number of bits used to represent it
+uint64_t cost_of_weight(int w){
+
+	//return cost_of_int(abs(w));
+	return cost_of_int(int_to_positive(w));
+
+}
+
+template<class dbg_type>
+class comp_edge{
+
+	public:
+
+	comp_edge(dbg_type& dbg) : dbg(dbg){}
+
+	bool operator() (const edge_t& lhs, const edge_t& rhs) const {
+
+		//minimizes the cost
+		//to see the effect of the MST on the overall structure size, turn this > into a <: this way the Maximum Spanning tree will be found
+		return cost_of_weight(dbg.weight_of_edge(lhs)) > cost_of_weight(dbg.weight_of_edge(rhs));
+
+	}
+
+	private:
+
+	dbg_type& dbg;
+
+};
 
 /*
  * input: edge (XYZ,W) stored as integer of 128 bits (see "format example" below), character c stored in 3 bits (see function toINT), and order k
@@ -125,14 +199,15 @@ public:
 	 * format: either fasta or fastq
 	 * nlines: if 0, process all DNA fragments. Otherwise, only the first nlines
 	 * k: de Bruijn graph order (limited to 41)
+	 * do_not_optimize: turn off space optimization (does not prune dBg)
 	 * srate: sample rate
 	 */
-	cw_dBg(string filename, format_t format, int nlines = 0, uint8_t k = 28, uint16_t srate = 64, bool verbose = true) : k(k), srate(srate){
+	cw_dBg(string filename, format_t format, int nlines = 0, uint8_t k = 28, uint16_t srate = 64, bool do_not_optimize = false, bool verbose = true) : k(k), srate(srate){
 
 		assert(k>0 and k<=41);
 
 		string BWT_;
-		vector<uint32_t> weights;
+		//vector<uint32_t> weights;
 
 		vector<bool> OUT_; //out-degrees: mark last edge (in BWT order) of each new k-mer
 		vector<bool> last; //marks first edge (in BWT order) of each new (k-1)-mer
@@ -455,7 +530,13 @@ public:
 		//debug only! prints all the data structures
 		//print_all();
 
+		if(not do_not_optimize)	prune(verbose);
 
+		//compute MST
+
+		auto w = MST();
+
+		cout << "weight of MST: " << w << " bits" << endl;
 
 	}
 
@@ -584,7 +665,35 @@ public:
 
 		auto idx = find_kmer(kmer);
 
-		return idx == number_of_nodes()?0:0; //TODO
+		return idx == number_of_nodes()?0:weights[idx]; //TODO
+
+	}
+
+	/*
+	 * abundance of node n (represented as integer, i.e. its rank among all nodes)
+	 */
+	int abundance(uint64_t n){
+
+		assert(n<number_of_nodes());
+		return int(weights[n]); //TODO
+
+	}
+
+	/*
+	 * edge is represented as pair <node, rank> where rank is the rank among outgoing edges of node
+	 */
+	int weight_of_edge(edge_t e){
+
+		assert(e.first<number_of_nodes());
+		assert(e.second < out_degree(e.first));
+
+		assert(out_label(e.first, e.second) != '$');
+
+		auto target = move_forward_by_rank(e.first, e.second);
+
+		assert(target<number_of_nodes());
+
+		return abundance(e.first) - abundance(target);
 
 	}
 
@@ -633,6 +742,18 @@ public:
 		uint64_t pos = node==0?0:OUT_sel(node)+1;
 
 		return IN_rank(LF(pos+k));
+
+	}
+
+	/*
+	 * input: edge (represented as pair node, rank of outgoing edge)
+	 * returns: position in the BWT of the edge
+	 *
+	 */
+	uint64_t edge_pos_in_bwt(edge_t e){
+
+		assert(e.second < out_degree(e.first));
+		return (e.first==0?0:OUT_sel(e.first)+1) + e.second;
 
 	}
 
@@ -714,7 +835,23 @@ public:
 	 * for each read. Many of these however are not necessary if the dBg is well connected. In particular, only sources
 	 * in the dBg (entry points in the connected components) need padded nodes, and those are few.
 	 */
-	void prune(){
+	void prune(bool verbose){
+
+		if(verbose){
+
+			cout << "Pruning the dBg ... " << endl;
+			cout << "\nStatistics before pruning:" << endl;
+			cout << "Number of distinct kmers " << number_of_distinct_kmers() << endl;
+			cout << "Number of padded kmers " << number_of_padded_kmers() << endl;
+			cout << "Number of nodes (distinct kmers + padded kmers) " << number_of_nodes() << endl;
+			cout << "Number of edges " << number_of_edges() << endl;
+
+			cout << "SPACE BEFORE PRUNING: " << endl;
+			cout << "  de Bruijn graph (BOSS): " << double(dbg_size_in_bits())/number_of_edges() << " bits per edge" << endl;
+			cout << "                          " << double(dbg_size_in_bits())/number_of_nodes() << " bits per node" << endl;
+			cout << "                          " << double(dbg_size_in_bits())/number_of_distinct_kmers() << " bits per distinct kmer" << endl;
+
+		}
 
 		//mark all padded nodes
 		vector<bool> padded(number_of_nodes(),false);
@@ -942,6 +1079,16 @@ public:
 		C[1] = C[0];
 		C[0] = 0; //$ starts at position 0 in the F column
 
+		assert(necessary_node[0]);
+
+		//prune weights
+
+		uint64_t idx=0;
+
+		for(uint64_t i=0;i<weights.size();++i)
+			if(necessary_node[i]) weights[idx++] = weights[i];
+
+		weights.resize(number_of_nodes());
 	}
 
 private:
@@ -1023,6 +1170,69 @@ private:
 	}
 
 	/*
+	 * computes MST. Marks in mst edges of OUT that are part of the MST
+	 * returns weight of the MST
+	 */
+	uint64_t MST(){
+
+		bit_vector mst_bv(OUT.size(),0);
+
+		uint64_t weight = 0; //weight of the MST
+
+		set<uint64_t> not_in_mst;//nodes not yet in the MST
+
+		//insert all nodes but the root in MST
+		for(uint64_t u = 1; u<number_of_nodes(); ++u) not_in_mst.insert(u);
+
+		uint64_t u = 0;//node to be processed. Initially, the root
+
+		//pq contains edges (u,k). Let v = move_forward_by_rank(u,k). Then edge (u,v) is not in the MST
+		priority_queue<edge_t, vector<edge_t>, comp_edge<decltype(*this)> > pq(*this);
+
+		for(uint8_t k = 0; k<out_degree(u);++k)
+			if(out_label(u,k)!='$')
+				pq.push({u,k});
+
+		while(not pq.empty()){
+
+			edge_t e;
+			uint64_t v = 0;
+
+			//find a minimum weight edge on the frontier
+			do{
+
+				e = pq.top();
+				pq.pop();
+
+				v = move_forward_by_rank(e.first,e.second);
+
+			}while((not pq.empty()) && not_in_mst.find(v) == not_in_mst.end());
+
+			//frontier edge found
+			if(not_in_mst.find(v) != not_in_mst.end()){
+
+				weight += cost_of_weight(weight_of_edge(e));//weight of MST
+
+				not_in_mst.erase(not_in_mst.find(v));
+				for(uint8_t k = 0; k<out_degree(v);++k)
+					if(out_label(v,k)!='$')
+						pq.push({v,k});
+
+				mst_bv[edge_pos_in_bwt(e)] = 1;
+
+			}
+
+		}
+
+		assert(not_in_mst.size()==0);
+
+		mst = rrr_vector<>(mst_bv);
+
+		return weight;
+
+	}
+
+	/*
 	 * for debug only: prints all structures
 	 */
 	void print_all(){
@@ -1066,6 +1276,8 @@ private:
 	typename bitv_type::select_1_type OUT_sel;
 
 	//weights:
+
+	vector<uint32_t> weights; //TODO debug
 
 	cint_vector deltas; //compressed deltas on the edges of the MST
 
