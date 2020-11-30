@@ -536,7 +536,7 @@ public:
 
 		auto w = MST();
 
-		cout << "weight of MST: " << w << " bits" << endl;
+		cout << "weight of MST: " << w << " bits (" << double(w)/number_of_distinct_kmers() << " bits/kmer if stored with Elias Gamma)" << endl;
 
 	}
 
@@ -897,13 +897,21 @@ public:
 
 		for(uint64_t n = 0; n<number_of_nodes();++n){
 
-			if(not padded[n]) necessary_node[n] = true;
+			if(not padded[n]){
+
+				//cout << "necessary non-padded node: " << n << endl;
+				necessary_node[n] = true;
+
+			}
 
 			uint64_t node;
 			if(not padded[n] && in_degree(n)==1 && padded[node = move_backward(n,0)]){
 
-				while(node != 0 and not necessary_node[node]){
+				while(node != 0){
 
+					//cout << "necessary padded node: " << node << endl;
+
+					assert(padded[node]);
 					necessary_node[node] = true;
 					assert(in_degree(node) == 1); //all padded nodes have in-degree 1
 					node = move_backward(node,0);
@@ -914,144 +922,104 @@ public:
 
 		}
 
+		assert(necessary_node[0]);
+
 		//update padded_kmers
 		padded_kmers = 0;
 		for(uint64_t i=0;i<number_of_nodes();++i)
 			padded_kmers += padded[i] and necessary_node[i];
 
-		//cout << padded_kmers << endl;
-
-		/*uint64_t necessary_nodes = 0;
-
-		for(uint64_t n = 0; n<number_of_nodes();++n)
-			necessary_nodes += necessary_node[n];
-
-		cout << necessary_nodes  << " over " << number_of_nodes() << " are really necessary " << endl;*/
-
-		uint64_t pos_in_bwt = 0;
-		uint64_t pos_in_in = 0;
-
-		for(uint64_t n = 0;n<number_of_nodes();++n){
-
-			auto in_deg = in_degree(n);
-			auto out_deg = out_degree(n);
-
-			//if the BWT has more than 1 outgoing edge, remove the one labeled $
-			//(because we only need it when the out-degree of a node is 0)
-			if(out_deg > 1 and BWT[pos_in_bwt]=='$')
-				remove_from_bwt[pos_in_bwt] = true;
-
-			for(uint8_t off = 0; off < out_deg;++off){
-
-				/*
-				 * remove outgoing edges either if:
-				 * - the node is not necessary or
-				 * - the node the edge leads to is not necessary
-				 */
-				if(not necessary_node[n] or (BWT[pos_in_bwt+off]!='$' && not necessary_node[move_forward_by_rank(n,off)]))
-					remove_from_bwt[pos_in_bwt+off] = true;
-
-			}
-
-			for(uint8_t off = 0; off < in_deg;++off){
-
-				/*
-				 * remove incoming edges either if:
-				 * - the node is not necessary or
-				 * - the node the edge leads to is not necessary
-				 */
-				if(not necessary_node[n] or (n>0 && not necessary_node[move_backward(n,off)]))
-					remove_from_in[pos_in_in+off] = true;
-
-			}
-
-			pos_in_bwt+=out_deg;
-			pos_in_in+=in_deg;
-
-		}
-
-		//compute size of new data structures
-
-		uint64_t new_bwt_len = 0;
-		uint64_t new_IN_len = 0;
-
-		uint64_t nr_nodes = number_of_nodes();
-
-		for(auto b : remove_from_bwt) new_bwt_len += (not b);
-		for(auto b : remove_from_in) new_IN_len += (not b);
-
 		{
 
 			string newBWT;
-			newBWT.reserve(new_bwt_len);
+			vector<bool> new_IN;
+			vector<bool> new_OUT;
 
-			for(uint64_t i=0;i<BWT.size();++i)
-				if(not remove_from_bwt[i])
-					newBWT.push_back(BWT[i]);
+			for(uint64_t n = 0;n<number_of_nodes();++n){
 
-			assert(newBWT.size() == new_bwt_len);
+				//append to newBWT, newIN, newOUT only if the node is necessary
+				if(necessary_node[n]){
+
+					//in- and out-degree of the node
+					auto in_deg = in_degree(n);
+					auto out_deg = out_degree(n);
+
+					//compute new in-degree
+					uint8_t new_in_deg = 0;
+					for(uint8_t k = 0;k<in_deg;++k){
+
+						if(n == 0 || necessary_node[move_backward(n,k)])
+							new_in_deg++;
+
+					}
+
+					assert(new_in_deg>0);
+
+					for(uint8_t k = 0;k<new_in_deg-1;++k)
+						new_IN.push_back(false);
+
+					new_IN.push_back(true);
+
+					//compute new out-degree
+					uint8_t new_out_deg = 0;
+
+					for(uint8_t k = 0;k<out_deg;++k){
+
+						char c = out_label(n,k);
+
+						if(c == '$'){
+
+							//insert $ in BWT only if the node has out-degree = 1 (i.e. has only $ as outgoing edge)
+							if(out_deg==1){
+								new_out_deg++;
+								newBWT.push_back(c);
+							}
+
+						}else{
+
+							//cout << "edge " << char(c) << " node " << n << " out node: " << int(necessary_node[move_forward_by_rank(n,k)]) << endl;
+
+							if(necessary_node[move_forward_by_rank(n,k)]){
+								newBWT.push_back(c);
+								new_out_deg++;
+							}
+
+						}
+
+					}
+
+					//the root is allowed to have out degree 1 because we mark it as necessary even if it might not be
+					//we fix this in the next line
+					assert(n == 0 or new_out_deg>0);
+
+					//if root is not actually necessary, we add to it just 1 outgoing edge labeled $
+					if(n==0 and new_out_deg == 0){
+						newBWT.push_back('$');
+						new_out_deg=1;
+					}
+
+					for(uint8_t k = 0;k<new_out_deg-1;++k)
+						new_OUT.push_back(false);
+
+					new_OUT.push_back(true);
+
+				}
+
+			}
 
 			//re-build BWT
 			BWT = str_type();
 			construct_im(BWT, newBWT.c_str(), 1);
 
-		}
+			bit_vector in_bv(new_IN.size());
+			for(uint64_t i=0;i<new_IN.size();++i)
+				in_bv[i] = new_IN[i];
 
-		{
+			assert(in_bv[in_bv.size()-1]);
 
-			bit_vector out_bv(new_bwt_len);
-
-			uint64_t idx = 0;
-
-			uint64_t pos_in_bwt = 0;
-
-			for(uint64_t n=0;n<nr_nodes;++n){
-
-				auto out_deg = out_degree(n);
-
-				uint8_t new_out_deg = 0;
-
-				for(uint8_t off = 0; off < out_deg;++off){
-
-					new_out_deg += (not remove_from_bwt[pos_in_bwt++]);
-
-				}
-
-				if(new_out_deg>0){
-
-					for(uint8_t k=0;k<new_out_deg-1;++k) out_bv[idx++]=0;
-					out_bv[idx++]=1;
-
-				}
-
-			}
-
-			bit_vector in_bv(new_IN_len);
-
-			uint64_t pos_in_in = 0;
-
-			idx = 0;
-
-			for(uint64_t n=0;n<nr_nodes;++n){
-
-				auto in_deg = in_degree(n);
-
-				uint8_t new_in_deg = 0;
-
-				for(uint8_t off = 0; off < in_deg;++off){
-
-					new_in_deg += (not remove_from_in[pos_in_in++]);
-
-				}
-
-				if(new_in_deg>0){
-
-					for(uint8_t k=0;k<new_in_deg-1;++k) in_bv[idx++]=0;
-					in_bv[idx++]=1;
-
-				}
-
-			}
+			bit_vector out_bv(new_OUT.size());
+			for(uint64_t i=0;i<new_OUT.size();++i)
+				out_bv[i] = new_OUT[i];
 
 			OUT = bitv_type(out_bv);
 			OUT_rank = typename bitv_type::rank_1_type(&OUT);
@@ -1079,8 +1047,6 @@ public:
 		C[1] = C[0];
 		C[0] = 0; //$ starts at position 0 in the F column
 
-		assert(necessary_node[0]);
-
 		//prune weights
 
 		uint64_t idx=0;
@@ -1089,6 +1055,12 @@ public:
 			if(necessary_node[i]) weights[idx++] = weights[i];
 
 		weights.resize(number_of_nodes());
+
+		assert(weights.size() == number_of_nodes());
+		assert(OUT.size() == BWT.size());
+		assert(IN.size() == BWT.size()-BWT.rank(BWT.size(),'$')+1);
+		assert(weights.size() == IN_rank(IN.size()));
+
 	}
 
 private:
@@ -1170,7 +1142,7 @@ private:
 	}
 
 	/*
-	 * computes MST. Marks in mst edges of OUT that are part of the MST
+	 * computes MST forest. Marks in mst edges of OUT that are part of the MST
 	 * returns weight of the MST
 	 */
 	uint64_t MST(){
@@ -1181,48 +1153,60 @@ private:
 
 		set<uint64_t> not_in_mst;//nodes not yet in the MST
 
+		int n_MST = 0; //number of trees in the MST forest
+
 		//insert all nodes but the root in MST
-		for(uint64_t u = 1; u<number_of_nodes(); ++u) not_in_mst.insert(u);
+		for(uint64_t u = 0; u<number_of_nodes(); ++u) not_in_mst.insert(u);
 
-		uint64_t u = 0;//node to be processed. Initially, the root
+		while(not_in_mst.size()>0){
 
-		//pq contains edges (u,k). Let v = move_forward_by_rank(u,k). Then edge (u,v) is not in the MST
-		priority_queue<edge_t, vector<edge_t>, comp_edge<decltype(*this)> > pq(*this);
+			n_MST++;
 
-		for(uint8_t k = 0; k<out_degree(u);++k)
-			if(out_label(u,k)!='$')
-				pq.push({u,k});
+			uint64_t u = *not_in_mst.begin();
 
-		while(not pq.empty()){
+			not_in_mst.erase(not_in_mst.find(u));
 
-			edge_t e;
-			uint64_t v = 0;
+			//pq contains edges (u,k). Let v = move_forward_by_rank(u,k). Then edge (u,v) is not in the MST
+			priority_queue<edge_t, vector<edge_t>, comp_edge<decltype(*this)> > pq(*this);
 
-			//find a minimum weight edge on the frontier
-			do{
+			for(uint8_t k = 0; k<out_degree(u);++k)
+				if(out_label(u,k)!='$')
+					pq.push({u,k});
 
-				e = pq.top();
-				pq.pop();
+			while(not pq.empty()){
 
-				v = move_forward_by_rank(e.first,e.second);
+				edge_t e;
+				uint64_t v = 0;
 
-			}while((not pq.empty()) && not_in_mst.find(v) == not_in_mst.end());
+				//find a minimum weight edge on the frontier
+				do{
 
-			//frontier edge found
-			if(not_in_mst.find(v) != not_in_mst.end()){
+					e = pq.top();
+					pq.pop();
 
-				weight += cost_of_weight(weight_of_edge(e));//weight of MST
+					v = move_forward_by_rank(e.first,e.second);
 
-				not_in_mst.erase(not_in_mst.find(v));
-				for(uint8_t k = 0; k<out_degree(v);++k)
-					if(out_label(v,k)!='$')
-						pq.push({v,k});
+				}while((not pq.empty()) && not_in_mst.find(v) == not_in_mst.end());
 
-				mst_bv[edge_pos_in_bwt(e)] = 1;
+				//frontier edge found
+				if(not_in_mst.find(v) != not_in_mst.end()){
+
+					weight += cost_of_weight(weight_of_edge(e));//weight of MST
+
+					not_in_mst.erase(not_in_mst.find(v));
+					for(uint8_t k = 0; k<out_degree(v);++k)
+						if(out_label(v,k)!='$')
+							pq.push({v,k});
+
+					mst_bv[edge_pos_in_bwt(e)] = 1;
+
+				}
 
 			}
 
 		}
+
+		cout << "Number of connected components : " << n_MST << endl;
 
 		assert(not_in_mst.size()==0);
 

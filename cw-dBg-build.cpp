@@ -107,7 +107,7 @@ int main(int argc, char** argv){
 	//cw_dBg<bit_vector, wt_huff<> > cwdbg(input_file, format, nlines, k, srate, true); //fast - uses uncompressed vectors
 	cw_dBg<> cwdbg(input_file, format, nlines, k, srate, do_not_optimize, true); //slow but very small - uses rrr-compressed bit-vectors everywhere
 
-	string km;
+	/*string km;
 	km = "CGA";	cout << km << " " << cwdbg.find_kmer(km) << " " << cwdbg.abundance(km) << endl;
 	km = "GAC";	cout << km << " " << cwdbg.find_kmer(km) << " " << cwdbg.abundance(km) << endl;
 	km = "TAC";	cout << km << " " << cwdbg.find_kmer(km) << " " << cwdbg.abundance(km) << endl;
@@ -116,7 +116,7 @@ int main(int argc, char** argv){
 	km = "TCG";	cout << km << " " << cwdbg.find_kmer(km) << " " << cwdbg.abundance(km) << endl;
 	km = "ACT";	cout << km << " " << cwdbg.find_kmer(km) << " " << cwdbg.abundance(km) << endl;
 	km = "CGT";	cout << km << " " << cwdbg.find_kmer(km) << " " << cwdbg.abundance(km) << endl;
-	km = "AAA";	cout << km << " " << cwdbg.find_kmer(km) << " " << cwdbg.abundance(km) << endl;
+	km = "AAA";	cout << km << " " << cwdbg.find_kmer(km) << " " << cwdbg.abundance(km) << endl;*/
 
 	//for(int i=0;i<11;++i) cout << i << " " << int(cwdbg.in_degree(i)) << " " << int(cwdbg.out_degree(i)) << endl;
 
