@@ -534,9 +534,35 @@ public:
 
 		//compute MST
 
+		if(verbose)
+			cout << "Computing MST ... " << endl;
+
 		auto w = MST();
 
-		cout << "weight of MST: " << w << " bits (" << double(w)/number_of_distinct_kmers() << " bits/kmer if stored with Elias Gamma)" << endl;
+		if(verbose)
+			cout << "Done. Weight of MST: " << w << " bits (" << double(w)/number_of_distinct_kmers() << " bits/kmer if stored with Elias Gamma)" << endl;
+
+		if(verbose)
+			cout << "Computing compressed deltas on the MST edges ... " << endl;
+
+		build_deltas();
+
+		if(verbose)
+			cout << "Done." << endl;
+
+		if(verbose)
+			cout << "Computing MST tree decomposition (samples) ... " << endl;
+
+		macro_tree_decomposition();
+
+		if(verbose)
+			cout << "Done." << endl;
+
+
+		//contruction ended. Free space of weights
+
+		weights.clear();
+		weights.shrink_to_fit();
 
 	}
 
@@ -665,7 +691,7 @@ public:
 
 		auto idx = find_kmer(kmer);
 
-		return idx == number_of_nodes()?0:weights[idx]; //TODO
+		return idx == number_of_nodes()?0:weights[idx]; //TODO: use the compressed weights once 'weights' has been freed
 
 	}
 
@@ -675,7 +701,7 @@ public:
 	int abundance(uint64_t n){
 
 		assert(n<number_of_nodes());
-		return int(weights[n]); //TODO
+		return int(weights[n]); //TODO: use the compressed weights once 'weights' has been freed
 
 	}
 
@@ -754,6 +780,18 @@ public:
 
 		assert(e.second < out_degree(e.first));
 		return (e.first==0?0:OUT_sel(e.first)+1) + e.second;
+
+	}
+
+	/*
+	 * input: edge (represented as pair node, rank of outgoing edge)
+	 * returns: position in array IN (equivalently, in F column) of the edge
+	 *
+	 */
+	uint64_t edge_pos_in_IN(edge_t e){
+
+		uint64_t bwt_pos = edge_pos_in_bwt(e);
+		return LF(bwt_pos);
 
 	}
 
@@ -1142,12 +1180,12 @@ private:
 	}
 
 	/*
-	 * computes MST forest. Marks in mst edges of OUT that are part of the MST
+	 * computes MST forest. Marks in mst edges of IN that are part of the MST
 	 * returns weight of the MST
 	 */
 	uint64_t MST(){
 
-		bit_vector mst_bv(OUT.size(),0);
+		bit_vector mst_bv(IN.size(),0);
 
 		uint64_t weight = 0; //weight of the MST
 
@@ -1198,7 +1236,7 @@ private:
 						if(out_label(v,k)!='$')
 							pq.push({v,k});
 
-					mst_bv[edge_pos_in_bwt(e)] = 1;
+					mst_bv[edge_pos_in_IN(e)] = 1;
 
 				}
 
@@ -1211,8 +1249,204 @@ private:
 		assert(not_in_mst.size()==0);
 
 		mst = rrr_vector<>(mst_bv);
+		mst_rank = rrr_vector<>::rank_1_type(&mst);
 
 		return weight;
+
+	}
+
+	void build_deltas(){
+
+		vector<uint64_t> deltas_int;
+
+		//for each character in F column
+		for(uint64_t i = 0; i<IN.size(); ++i){
+
+			//if the character corresponds to a mst edge
+			if(mst[i]){
+
+				//find the two endpoints of the edge
+				uint64_t source = OUT_rank(FL(i));
+				uint64_t dest = IN_rank(i);
+
+				int w1 = abundance(source);
+				int w2 = abundance(dest);
+
+				auto encoded_diff = int_to_positive(w1-w2);
+
+				deltas_int.push_back(encoded_diff);
+
+			}
+
+		}
+
+		assert(mst_rank(mst.size()) == deltas_int.size());
+
+		deltas = cint_vector(deltas_int);
+
+	}
+
+	/*
+	 * is n a leaf of the MST?
+	 */
+	bool is_leaf(uint64_t n){
+
+		uint8_t out_deg = out_degree(n);
+
+		assert(out_deg>0);
+
+		uint64_t first_edge = edge_pos_in_bwt({n,0});
+		uint64_t last_edge = first_edge + out_deg-1;
+
+		bool out_edge_found = false;
+
+		while(first_edge<=last_edge){
+
+			if(BWT[first_edge] != '$'){
+
+				auto pos_in_F = LF(first_edge);
+				out_edge_found = out_edge_found or mst[pos_in_F];
+
+			}
+
+			first_edge++;
+
+		}
+
+		return not out_edge_found;
+
+	}
+
+	/*
+	 * returns parent of n in the MST
+	 */
+	uint64_t parent_in_mst(uint64_t n){
+
+		assert(not is_root_in_mst(n));
+
+		auto in_deg = in_degree(n);
+
+		uint64_t first_pos = n==0?0:IN_sel(n)+1;
+		uint64_t last_pos = first_pos+in_deg-1;
+
+		//there can be only 1 incoming edge in the MST
+		assert(mst_rank(last_pos+1) == mst_rank(first_pos)+1);
+
+		while(not mst[first_pos] and first_pos <= last_pos) first_pos++;
+
+		assert(first_pos <= last_pos);
+
+		return OUT_rank(FL(first_pos));
+
+	}
+
+	/*
+	 * true iff n is a root in the mst forest
+	 */
+	bool is_root_in_mst(uint64_t n){
+
+		auto in_deg = in_degree(n);
+
+		uint64_t first_pos = n==0?0:IN_sel(n)+1;
+		uint64_t last_pos = first_pos+in_deg-1;
+
+		return mst_rank(last_pos+1) == mst_rank(first_pos);
+
+	}
+
+	/*
+	 * true iff position i in the BWT is a MST edge
+	 */
+	bool mst_edge_on_bwt(uint64_t i){
+
+		if(BWT[i] == '$')
+			return false;
+
+		return mst[LF(i)];
+
+	}
+
+	/*
+	 * marks sampled nodes on the dBg using a tree decomposition that
+	 * decomposes the tree in subtrees of size Theta(srate). In the end, marks
+	 * the roots of the subtrees using bitvector 'sampled'
+	 */
+	void macro_tree_decomposition(){
+
+		//rrr_vector<> sampled;
+		//rrr_vector<>::rank_1_type sampled_rank;
+
+		bit_vector sampled_bv(number_of_nodes(),0);
+
+		//root is always sampled
+		sampled_bv[0] = 1;
+
+		//post-order visit of the MST
+		queue<uint64_t> nodes;
+
+		//size of each component of the tree decomposition
+		vector<uint16_t> component_size(number_of_nodes(),1);
+
+		//first insert all leaves
+		for(uint64_t i = 0;i<number_of_nodes();++i){
+
+			if(is_leaf(i))
+				nodes.push(i);
+
+		}
+
+		while(not nodes.empty()){
+
+			auto n = nodes.front();
+			nodes.pop();
+
+			auto out_deg = out_degree(n);
+
+			uint16_t sum_of_component_sizes = 1;
+
+			for(uint8_t k=0;k<out_deg;++k){
+
+				uint64_t pos = edge_pos_in_bwt({n,k});
+
+				//for each MST edge leaving n
+				if(mst_edge_on_bwt(pos)){
+
+					sum_of_component_sizes += component_size[move_forward_by_rank(n,k)];
+
+				}
+
+				if(sum_of_component_sizes < srate){
+
+					component_size[n] = sum_of_component_sizes;
+
+				}else{
+
+					component_size[n] = 0;
+					sampled_bv[n] = 1;
+
+				}
+
+			}
+
+			if(not is_root_in_mst(n)) nodes.push(parent_in_mst(n));
+
+		}
+
+		sampled = rrr_vector<>(sampled_bv);
+		sampled_rank = rrr_vector<>::rank_1_type(&sampled);
+
+		vector<uint32_t> samples_bv;
+
+		for(uint64_t i=0;i<number_of_nodes();++i){
+
+			if(sampled[i])
+				samples_bv.push_back(weights[i]);
+
+		}
+
+		samples = cint_vector(samples_bv);
+
+		cout << samples.size() << " sampled weights" << endl;
 
 	}
 
@@ -1261,11 +1495,11 @@ private:
 
 	//weights:
 
-	vector<uint32_t> weights; //TODO debug
+	vector<uint32_t> weights;
 
-	cint_vector deltas; //compressed deltas on the edges of the MST
+	cint_vector deltas; //compressed deltas on the edges of the MST, in IN order (i.e. on the F column)
 
-	//marks edges on the dBg that belong to the MST
+	//marks edges (in IN order) that belong to the MST
 	rrr_vector<> mst;
 	rrr_vector<>::rank_1_type mst_rank;
 
@@ -1274,7 +1508,7 @@ private:
 	rrr_vector<>::rank_1_type sampled_rank;
 
 	//sampled weights
-	int_vector<0> samples;
+	cint_vector samples;
 
 };
 
