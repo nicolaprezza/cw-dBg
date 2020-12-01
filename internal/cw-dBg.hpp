@@ -243,7 +243,7 @@ public:
 
 		}
 
-		//begin scope of vector<__uint128_t> kmers;
+		//begin scope of huge vector<__uint128_t> kmers;
 		{
 
 			ifstream file(filename);
@@ -312,53 +312,23 @@ public:
 
 			sort(kmers.begin(),kmers.end());
 
-
-
-
-			// TODO
-
-
-
-
 			if(verbose)
-				cout << "Done. Extracting BWT, in/out-degrees, and weights ..." << endl;
+				cout << "Done. In/out-degrees, edge labels, and weights ..." << endl;
 
 			//previous kmer read from kmers.
 			__uint128_t prev_kmer = kmers[0];
+
+			start_positions_out_.push_back(out_labels_.size());
 			out_labels_.push_back(toCHAR(kmers[0] & __uint128_t(7)));
-			OUT_.push_back(true);//mark that this BWT char is the first of the new kmer
-			last.push_back(true);//mark that this BWT char is the first of the new (k-1)-mer
 
 			uint32_t count = 1;
 
 			int n_nodes = 0;
 
-			//cout << "----" << (n_nodes++) << endl;
-
-			//cout << kmer_to_str(kmers[0],k) << " " << last[0] << endl;
-
 			for(uint64_t i = 1; i<kmers.size();++i){
 
-				//if kmer changes: we've already appended edges letter, it's time to append the weight
+				//if kmer changes
 				if((kmers[i]>>3) != (prev_kmer>>3)){
-
-					//cout << "----" << (n_nodes++) << endl;
-
-					//cout << kmer_to_str(kmers[i],k);
-
-					//if (k-1)-mer stays the same
-					if((kmers[i]>>6) == (prev_kmer>>6)){
-
-						last.push_back(false);
-
-						//cout << " 0" << endl;
-
-					}else{
-
-						last.push_back(true);
-						//cout << " 1" << endl;
-
-					}
 
 					//we set to 0 the counters of kmers that contain $
 					count = has_dollars(prev_kmer)?0:count;
@@ -373,10 +343,10 @@ public:
 
 					count = 1; //start counting weight of this new kmer
 
+					start_positions_out_.push_back(out_labels_.size());
 					out_labels_.push_back(toCHAR(kmers[i] & __uint128_t(7)));//append to BWT first outgoing edge of this new kmer
-					OUT_.push_back(true);//mark that this BWT char is the first of the new kmer
 
-				}else{//same kmer (and thus also (k-1)-mer)
+				}else{//same kmer
 
 					count++;
 
@@ -386,13 +356,7 @@ public:
 					//if char of outgoing edge has changed
 					if( curr_char != prev_char ){
 
-						//cout << kmer_to_str(kmers[i],k);
-
 						out_labels_.push_back(toCHAR(curr_char));
-						OUT_.push_back(false);//mark that this BWT char is NOT the first of the current kmer
-						last.push_back(false);//mark that this BWT char is NOT the first of the current (k-1)-mer
-
-						//cout << " 0" << endl;
 
 					}
 
@@ -410,13 +374,43 @@ public:
 			}
 
 			weights_.push_back(count);//push back weight of the lasst kmer
-			assert(OUT_.size() == out_labels_.length());
-			assert(last.size() == out_labels_.length());
+
+			if(verbose)
+				cout << "Done. Resizing k-mers ..." << endl;
+
+			//compact kmers by removing duplicates
+		    auto it = unique(kmers.begin(), kmers.end());
+		    kmers.resize(distance(kmers.begin(), it));
+		    //kmers.shrink_to_fit();
+
+		    assert(kmers.size() == out_labels_.size());
+		    OUT_ = vector<uint64_t>(out_labels_.size()));
+
+		    //TODO fill OUT_ by searching
 
 		}//end scope of vector<__uint128_t> kmers;
 
+		F_ = string();
+		F_.push_back('$');
+
+		//count number of occurrences of ACGT
+		vector<uint64_t> counts(4,0);
+
+		for(auto c:out_labels_)
+			if(c!='$') counts[toINT(c)]++;
+
+		for(uint64_t i=0;i<counts[toINT('A')];++i) F_.push_back('A');
+		for(uint64_t i=0;i<counts[toINT('C')];++i) F_.push_back('C');
+		for(uint64_t i=0;i<counts[toINT('G')];++i) F_.push_back('G');
+		for(uint64_t i=0;i<counts[toINT('T')];++i) F_.push_back('T');
+
+		IN_ = vector<uint64_t>(F_.size(),nr_of_nodes);
+
+		// TOOD fill IN_
+
 		MEAN_WEIGHT /= (weights_.size()-padded_kmers);
 
+		/*
 		C = vector<uint64_t>(5);
 
 		for(auto c : out_labels_) C[toINT(c)]++;
@@ -432,72 +426,7 @@ public:
 		C[2] = C[1];
 		C[1] = C[0];
 		C[0] = 0; //$ starts at position 0 in the F column
-
-
-		{
-
-
-
-			/*
-			 * IN_ will mark with a bit set the last incoming edge of each k-mer
-			 * we add 1 because the root kmer $$$ for convention has 1 incoming edge $
-			 * (it is the only kmer with incoming edge labeled $)
-			 *
-			 * to discover how many incoming edges there are, we subtract the number of $
-			 * from the BWT size
-			 */
-			//
-			bit_vector IN_(BWT.size() - BWT.rank(BWT.size(),'$')+1, false);
-
-			IN_[0] = true;
-
-			uint64_t cluster_start = 0;//beginning of the current cluster of the (k-1)-mer
-
-			for(uint64_t i=0;i<last.size();++i){
-
-				if(last[i]){//we've found the end of the cluster
-
-					//find previous occurrence of each letter
-					uint64_t rn_A = BWT.rank(i+1,'A');
-					assert(rn_A<=BWT.rank(BWT.size(),'A'));
-					uint64_t last_A = rn_A == 0?BWT.size():BWT.select(rn_A,'A');
-
-					uint64_t rn_C = BWT.rank(i+1,'C');
-					assert(rn_C<=BWT.rank(BWT.size(),'C'));
-					uint64_t last_C = rn_C == 0?BWT.size():BWT.select(rn_C,'C');
-
-					uint64_t rn_G = BWT.rank(i+1,'G');
-					assert(rn_G<=BWT.rank(BWT.size(),'G'));
-					uint64_t last_G = rn_G == 0?BWT.size():BWT.select(rn_G,'G');
-
-					uint64_t rn_T = BWT.rank(i+1,'T');
-					assert(rn_T<=BWT.rank(BWT.size(),'T'));
-					uint64_t last_T = rn_T == 0?BWT.size():BWT.select(rn_T,'T');
-
-					//if the last occurrence of the letter is inside the cluster, then we mark it in the F column
-					if(last_A >= cluster_start and last_A <= i){ assert(not IN_[LF(last_A)]); IN_[LF(last_A)] = true;};
-					if(last_C >= cluster_start and last_C <= i){ assert(not IN_[LF(last_C)]); IN_[LF(last_C)] = true;};
-					if(last_G >= cluster_start and last_G <= i){ assert(not IN_[LF(last_G)]); IN_[LF(last_G)] = true;};
-					if(last_T >= cluster_start and last_T <= i){ assert(not IN_[LF(last_T)]); IN_[LF(last_T)] = true;};
-
-					cluster_start = i+1; //in the next position a new cluster starts
-
-				}
-
-			}
-
-			IN = bitv_type(IN_);
-
-		}
-
-		IN_rank = typename bitv_type::rank_1_type(&IN);
-		IN_sel = typename bitv_type::select_1_type(&IN);
-
-		//cout << IN_rank(IN.size()) << " " << number_of_nodes() << endl;
-		assert(IN_rank(IN.size()) == number_of_nodes());
-
-		//debug only! prints all the data structures
-		//print_all();
+*/
 
 		if(not do_not_optimize)	prune(verbose);
 
@@ -1001,7 +930,6 @@ public:
 
 		assert(F_.size() == IN_.size());
 		assert(OUT_.size() == out_labels_.size());
-		assert();
 
 		//prune weights
 
@@ -1347,15 +1275,15 @@ private:
 	//labels of outgoing edges. Corresponds to the BWT, except that there can be unnecessary $ here (will be removed in BWT)
 	string out_labels_;
 	string F_; //labels of incoming edges
-	vector<uint32_t> OUT_; //outgoing edges
-	vector<uint32_t> IN_; //incoming edges
+	vector<uint64_t> OUT_; //outgoing edges
+	vector<uint64_t> IN_; //incoming edges
 
-	vector<uint32_t> start_positions_in_; //for each node, its starting position in IN_
-	vector<uint32_t> start_positions_out_; //for each node, its starting position in OUT_ and out_labels_
+	vector<uint64_t> start_positions_in_; //for each node, its starting position in IN_
+	vector<uint64_t> start_positions_out_; //for each node, its starting position in OUT_ and out_labels_
 
 	vector<uint32_t> weights_; //one weight per node
 
-	vector<uint32_t> parent_in_mst_; //one per node. For the roots we write nr_of_nodes
+	vector<uint64_t> parent_in_mst_; //one per node. For the roots we write nr_of_nodes
 	vector<bool> mst_out_edges_; //marks outgoing edges of the MST, in OUT_ order
 
 	//deltas on MST out edges
