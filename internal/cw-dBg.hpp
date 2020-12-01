@@ -123,7 +123,7 @@ class comp_edge{
 
 		//minimizes the cost
 		//to see the effect of the MST on the overall structure size, turn this > into a <: this way the Maximum Spanning tree will be found
-		return cost_of_weight(dbg.weight_of_edge(lhs)) > cost_of_weight(dbg.weight_of_edge(rhs));
+		return cost_of_weight(dbg.weight_of_edge_(lhs)) > cost_of_weight(dbg.weight_of_edge_(rhs));
 
 	}
 
@@ -205,9 +205,6 @@ public:
 	cw_dBg(string filename, format_t format, int nlines = 0, uint8_t k = 28, uint16_t srate = 64, bool do_not_optimize = false, bool verbose = true) : k(k), srate(srate){
 
 		assert(k>0 and k<=41);
-
-		string BWT_;
-		//vector<uint32_t> weights;
 
 		vector<bool> OUT_; //out-degrees: mark last edge (in BWT order) of each new k-mer
 		vector<bool> last; //marks first edge (in BWT order) of each new (k-1)-mer
@@ -315,12 +312,20 @@ public:
 
 			sort(kmers.begin(),kmers.end());
 
+
+
+
+			// TODO
+
+
+
+
 			if(verbose)
 				cout << "Done. Extracting BWT, in/out-degrees, and weights ..." << endl;
 
 			//previous kmer read from kmers.
 			__uint128_t prev_kmer = kmers[0];
-			BWT_.push_back(toCHAR(kmers[0] & __uint128_t(7)));
+			out_labels_.push_back(toCHAR(kmers[0] & __uint128_t(7)));
 			OUT_.push_back(true);//mark that this BWT char is the first of the new kmer
 			last.push_back(true);//mark that this BWT char is the first of the new (k-1)-mer
 
@@ -368,7 +373,7 @@ public:
 
 					count = 1; //start counting weight of this new kmer
 
-					BWT_.push_back(toCHAR(kmers[i] & __uint128_t(7)));//append to BWT first outgoing edge of this new kmer
+					out_labels_.push_back(toCHAR(kmers[i] & __uint128_t(7)));//append to BWT first outgoing edge of this new kmer
 					OUT_.push_back(true);//mark that this BWT char is the first of the new kmer
 
 				}else{//same kmer (and thus also (k-1)-mer)
@@ -383,7 +388,7 @@ public:
 
 						//cout << kmer_to_str(kmers[i],k);
 
-						BWT_.push_back(toCHAR(curr_char));
+						out_labels_.push_back(toCHAR(curr_char));
 						OUT_.push_back(false);//mark that this BWT char is NOT the first of the current kmer
 						last.push_back(false);//mark that this BWT char is NOT the first of the current (k-1)-mer
 
@@ -405,8 +410,8 @@ public:
 			}
 
 			weights_.push_back(count);//push back weight of the lasst kmer
-			assert(OUT_.size() == BWT_.length());
-			assert(last.size() == BWT_.length());
+			assert(OUT_.size() == out_labels_.length());
+			assert(last.size() == out_labels_.length());
 
 		}//end scope of vector<__uint128_t> kmers;
 
@@ -414,7 +419,7 @@ public:
 
 		C = vector<uint64_t>(5);
 
-		for(auto c : BWT_) C[toINT(c)]++;
+		for(auto c : out_labels_) C[toINT(c)]++;
 
 		C[0] = 1;//there is one $ in the F column (it's the only incoming edge of the root kmer $$$)
 		C[1] += C[0];
@@ -428,45 +433,9 @@ public:
 		C[1] = C[0];
 		C[0] = 0; //$ starts at position 0 in the F column
 
-		if(verbose)
-			cout << "Done. Indexing all structures ..." << endl;
-
-		construct_im(BWT, BWT_.c_str(), 1);
 
 		{
 
-			//flip bits in OUT so that they mark the last (not first) edge of each kmer
-			for(uint64_t i=0;i<OUT_.size()-1;++i){
-
-				OUT_[i] = false;
-				if(OUT_[i+1]) OUT_[i] = true;
-
-			}
-			OUT_[OUT_.size()-1] = true;
-
-			bit_vector out_bv(OUT_.size());
-			for(uint64_t i=0;i<OUT_.size();++i)
-				out_bv[i] = OUT_[i];
-
-			OUT = bitv_type(out_bv);
-
-		}
-
-		OUT_rank = typename bitv_type::rank_1_type(&OUT);
-		OUT_sel = typename bitv_type::select_1_type(&OUT);
-
-		assert(weights_.size() == OUT_rank(OUT.size()));
-
-		{
-
-			//flip bits in last so that they mark the last (not first) edge of each (k-1)-mer
-			for(uint64_t i=0;i<last.size()-1;++i){
-
-				last[i] = false;
-				if(last[i+1]) last[i] = true;
-
-			}
-			last[last.size()-1] = true;
 
 
 			/*
@@ -537,7 +506,7 @@ public:
 		if(verbose)
 			cout << "Computing MST ... " << endl;
 
-		auto w = MST();
+		auto w = MST_();
 
 		if(verbose)
 			cout << "Done. Weight of MST: " << w << " bits (" << double(w)/number_of_distinct_kmers() << " bits/kmer if stored with Elias Gamma)" << endl;
@@ -559,10 +528,7 @@ public:
 			cout << "Done." << endl;
 
 
-		//contruction ended. Free space of weights
 
-		weights_.clear();
-		weights_.shrink_to_fit();
 
 	}
 
@@ -624,16 +590,16 @@ public:
 
 	uint64_t number_of_distinct_kmers(){
 
-		return number_of_nodes() - padded_kmers;
+		return nr_of_nodes - padded_kmers;
 
 	}
 
 	/*
-	 * number of edges in the de Bruijn graph. Dummy edges labeled $ are ignored.
+	 * number of edges in the de Bruijn graph.
 	 */
 	uint64_t number_of_edges(){
 
-		return BWT.size() - BWT.rank(BWT.size(),'$');
+		return BWT.size();
 
 	}
 
@@ -695,34 +661,6 @@ public:
 	}
 
 	/*
-	 * abundance of node n (represented as integer, i.e. its rank among all nodes)
-	 */
-	int abundance(uint64_t n){
-
-		assert(n<number_of_nodes());
-		return int(weights_[n]); //TODO: use the compressed weights once 'weights' has been freed
-
-	}
-
-	/*
-	 * edge is represented as pair <node, rank> where rank is the rank among outgoing edges of node
-	 */
-	int weight_of_edge(edge_t e){
-
-		assert(e.first<number_of_nodes());
-		assert(e.second < out_degree(e.first));
-
-		assert(out_label(e.first, e.second) != '$');
-
-		auto target = move_forward_by_rank(e.first, e.second);
-
-		assert(target<number_of_nodes());
-
-		return abundance(e.first) - abundance(target);
-
-	}
-
-	/*
 	 * input: node (represented as an integer) and character
 	 * returns: node reached
 	 *
@@ -731,54 +669,47 @@ public:
 	 * c cannot be $
 	 *
 	 */
-	uint64_t move_forward_by_char(uint64_t node, char c){
+	uint64_t move_forward_by_char_(uint64_t node, char c){
 
 		assert(c != '$');
 
-		uint64_t nodes = number_of_nodes();
+		assert(node <= nr_of_nodes);
 
-		assert(node <= nodes);
+		if(node == nr_of_nodes) return node;
 
-		if(node == nodes) return node;
+		uint64_t idx = start_positions_out_[node];
+		uint8_t k = 0;
 
-		//starting point in BWT
-		uint64_t start = node == 0 ? 0 : OUT_sel(node)+1;
+		while(out_labels_[idx+k] != c and k < out_degree_(node)) ++k;
 
-		while(BWT[start] != c && OUT[start] == 0) start++;
-
-		if(BWT[start] == c)
-			node = IN_rank(LF(start));
-		else
-			node = nodes;
-
-		return node;
+		return k == out_degree_(node) ? nr_of_nodes : OUT_[idx+k];
 
 	}
 
 	/*
-	 * input: node (represented as an integer) and rank between 0 and out_degree(node)-1
+	 * input: node (represented as an integer) and rank between 0 and out_degree_(node)-1
 	 * returns: node reached by following the k-th outgoing edge of the node
 	 *
 	 */
-	uint64_t move_forward_by_rank(uint64_t node, uint8_t k){
+	uint64_t move_forward_by_rank_(uint64_t node, uint8_t k){
 
-		assert(k<out_degree(node));
+		if(node == nr_of_nodes) return node;
 
-		uint64_t pos = node==0?0:OUT_sel(node)+1;
+		assert(k<out_degree_(node));
 
-		return IN_rank(LF(pos+k));
+		return OUT_[start_positions_out_[node]+k];
 
 	}
 
 	/*
 	 * input: edge (represented as pair node, rank of outgoing edge)
-	 * returns: position in the BWT of the edge
+	 * returns: position in OUT_ of the edge
 	 *
 	 */
-	uint64_t edge_pos_in_bwt(edge_t e){
+	uint64_t edge_pos_in_OUT_(edge_t e){
 
-		assert(e.second < out_degree(e.first));
-		return (e.first==0?0:OUT_sel(e.first)+1) + e.second;
+		assert(e.second < out_degree_(e.first));
+		return start_positions_out_[e.first] + e.second;
 
 	}
 
@@ -787,48 +718,43 @@ public:
 	 * returns: position in array IN (equivalently, in F column) of the edge
 	 *
 	 */
-	uint64_t edge_pos_in_IN(edge_t e){
+	uint64_t edge_pos_in_IN_(edge_t e){
 
-		uint64_t bwt_pos = edge_pos_in_bwt(e);
-		return LF(bwt_pos);
+		assert(e.second < in_degree_(e.first));
+
+		return start_positions_in_[e.first] + e.second;
+
 
 	}
 
 	/*
-	 * input: node (represented as an integer) and rank between 0 and out_degree(node)-1
+	 * input: node (represented as an integer) and rank between 0 and out_degree_(node)-1
 	 * returns: label of k-th outgoing edge of the node
 	 *
 	 */
-	char out_label(uint64_t node, uint8_t k){
+	char out_label_(uint64_t node, uint8_t k){
 
-		assert(k<out_degree(node));
+		assert(k<out_degree_(node));
 
-		uint64_t pos = node==0?0:OUT_sel(node)+1;
-
-		return BWT[pos+k];
+		return out_labels_[start_positions_out_[e.first] + e.second];
 
 	}
 
 	/*
-	 * input: node (represented as an integer) and rank between 0 and in_degree(node)-1
+	 * input: node (represented as an integer) and rank between 0 and in_degree_(node)-1
 	 * returns: node reached by following the k-th incoming edge of the node
 	 *
 	 * node cannot be the root 0 ($$$)
 	 */
-	uint64_t move_backward(uint64_t node, uint8_t k){
+	uint64_t move_backward_(uint64_t node, uint8_t k){
 
-		assert(k<in_degree(node));
-		assert(in_degree(node)>0);
+		assert(k<in_degree_(node));
+		assert(in_degree_(node)>0);
 
 		assert(node > 0);
 		assert(node < number_of_nodes());
-		assert(IN_sel(node)+1 < IN.size());
 
-		uint64_t idx = IN_sel(node)+1+k;
-
-		assert(idx<IN.size());
-
-		return OUT_rank(FL(idx));
+		return IN_[start_positions_in_[node]+k];
 
 	}
 
@@ -838,11 +764,11 @@ public:
 	 * this number is always between 1 and 4
 	 *
 	 */
-	uint8_t in_degree(uint64_t node){
+	uint8_t in_degree_(uint64_t node){
 
 		assert(node<number_of_nodes());
 
-		return IN_sel(node+1) - (node == 0 ? 0 : IN_sel(node)+1) +1;
+		return node == nr_of_nodes-1 ? nr_of_nodes - start_positions_in_[node] : start_positions_in_[node+1]-start_positions_in_[node];
 
 	}
 
@@ -851,21 +777,13 @@ public:
 	 * this number is always between 0 and 5 (count also $ if present)
 	 *
 	 */
-	uint8_t out_degree(uint64_t node){
+	uint8_t out_degree_(uint64_t node){
 
 		assert(node<number_of_nodes());
 
-		return OUT_sel(node+1) - (node == 0 ? 0 : OUT_sel(node)+1) +1;
+		return node == nr_of_nodes-1 ? nr_of_nodes - start_positions_out_[node] : start_positions_out_[node+1]-start_positions_out_[node];
 
 	}
-
-	/*
-	 * the source of the de Bruijn graph (i.e. node $$$)
-	 */
-	uint64_t source(){
-		return 0;
-	}
-
 
 	/*
 	 * removes all the unnecessary padded nodes. The problem with dBgs over read sets is that we add k padded nodes
@@ -896,9 +814,9 @@ public:
 		//nodes that are necessary (not to be deleted)
 		vector<bool> necessary_node(number_of_nodes(),false);
 
-		//mark elements in BWT/OUT and IN
-		vector<bool> remove_from_bwt(BWT.size(),false);
-		vector<bool> remove_from_in(IN.size(),false);
+		//mark elements in OUT_ and IN_
+		vector<bool> remove_out_edge(OUT_.size(),false);
+		vector<bool> remove_in_edge(IN_.size(),false);
 
 		{
 			//find all nodes that are within distance k-1 from root (i.e. all padded nodes)
@@ -917,9 +835,9 @@ public:
 
 				padded[n] = true;
 
-				for(uint8_t i = 0; i < out_degree(n) && d<k-1 && out_label(n,i) != '$' ;++i){
+				for(uint8_t i = 0; i < out_degree_(n) && d<k-1 && out_label_(n,i) != '$' ;++i){
 
-					S.push({move_forward_by_rank(n,i),d+1});
+					S.push({move_forward_by_rank_(n,i),d+1});
 
 				}
 
@@ -942,7 +860,7 @@ public:
 			}
 
 			uint64_t node;
-			if(not padded[n] && in_degree(n)==1 && padded[node = move_backward(n,0)]){
+			if(not padded[n] && in_degree_(n)==1 && padded[node = move_backward_(n,0)]){
 
 				while(node != 0){
 
@@ -950,8 +868,8 @@ public:
 
 					assert(padded[node]);
 					necessary_node[node] = true;
-					assert(in_degree(node) == 1); //all padded nodes have in-degree 1
-					node = move_backward(node,0);
+					assert(in_degree_(node) == 1); //all padded nodes have in-degree 1
+					node = move_backward_(node,0);
 
 				}
 
@@ -968,56 +886,67 @@ public:
 
 		{
 
-			string newBWT;
-			vector<bool> new_IN;
-			vector<bool> new_OUT;
+			string new_out_labels;
+			vector<uint64_t> new_IN;
+			vector<uint64_t> new_OUT;
+			vector<uint64_t> new_start_positions_in; //for each node, its starting position in IN_
+			vector<uint64_t> new_start_positions_out; //for each node, its starting position in OUT_ and out_labels_
+
+			uint64_t start_IN = 0;
+			uint64_t start_OUT = 0;
 
 			for(uint64_t n = 0;n<number_of_nodes();++n){
 
-				//append to newBWT, newIN, newOUT only if the node is necessary
+				//append to new_out_labels, new_IN, new_OUT only if the node is necessary
 				if(necessary_node[n]){
 
+					new_start_positions_in.push_back(start_IN);
+					new_start_positions_out.push_back(start_OUT);
+
 					//in- and out-degree of the node
-					auto in_deg = in_degree(n);
-					auto out_deg = out_degree(n);
+					auto in_deg = in_degree_(n);
+					auto out_deg = out_degree_(n);
 
 					//compute new in-degree
 					uint8_t new_in_deg = 0;
 					for(uint8_t k = 0;k<in_deg;++k){
 
-						if(n == 0 || necessary_node[move_backward(n,k)])
+						if(n == 0 || necessary_node[move_backward_(n,k)]){
+
 							new_in_deg++;
+							new_IN.push_back(n==0?nr_of_nodes:move_backward_(n,k));
+
+						}
 
 					}
 
+					start_IN += new_in_deg;
+
 					assert(new_in_deg>0);
-
-					for(uint8_t k = 0;k<new_in_deg-1;++k)
-						new_IN.push_back(false);
-
-					new_IN.push_back(true);
 
 					//compute new out-degree
 					uint8_t new_out_deg = 0;
 
 					for(uint8_t k = 0;k<out_deg;++k){
 
-						char c = out_label(n,k);
+						char c = out_label_(n,k);
 
 						if(c == '$'){
 
-							//insert $ in BWT only if the node has out-degree = 1 (i.e. has only $ as outgoing edge)
+							//insert $ in new_out_labels only if the node has out-degree = 1 (i.e. has only $ as outgoing edge)
 							if(out_deg==1){
 								new_out_deg++;
-								newBWT.push_back(c);
+								new_OUT.push_back(nr_of_nodes);
+								new_out_labels.push_back(c);
 							}
 
 						}else{
 
-							//cout << "edge " << char(c) << " node " << n << " out node: " << int(necessary_node[move_forward_by_rank(n,k)]) << endl;
+							//cout << "edge " << char(c) << " node " << n << " out node: " << int(necessary_node[move_forward_by_rank_(n,k)]) << endl;
 
-							if(necessary_node[move_forward_by_rank(n,k)]){
-								newBWT.push_back(c);
+							if(necessary_node[move_forward_by_rank_(n,k)]){
+								new_out_labels.push_back(c);
+								new_OUT.push_back(move_forward_by_rank_(n,k));
 								new_out_deg++;
 							}
 
@@ -1025,64 +954,54 @@ public:
 
 					}
 
+					start_OUT += new_out_deg;
+
 					//the root is allowed to have out degree 1 because we mark it as necessary even if it might not be
 					//we fix this in the next line
 					assert(n == 0 or new_out_deg>0);
 
 					//if root is not actually necessary, we add to it just 1 outgoing edge labeled $
 					if(n==0 and new_out_deg == 0){
-						newBWT.push_back('$');
+						new_out_labels.push_back('$');
 						new_out_deg=1;
+						new_OUT.push_back(nr_of_nodes);
 					}
-
-					for(uint8_t k = 0;k<new_out_deg-1;++k)
-						new_OUT.push_back(false);
-
-					new_OUT.push_back(true);
 
 				}
 
 			}
 
-			//re-build BWT
-			BWT = str_type();
-			construct_im(BWT, newBWT.c_str(), 1);
+			out_labels_ = new_out_labels;
+			IN_ = new_IN;
+			OUT_ = new_OUT;
+			start_positions_in_ = new_start_positions_in; //for each node, its starting position in IN_
+			start_positions_out_ = new_start_positions_out; //for each node, its starting position in OUT_ and out_labels_
 
-			bit_vector in_bv(new_IN.size());
-			for(uint64_t i=0;i<new_IN.size();++i)
-				in_bv[i] = new_IN[i];
+			assert(start_positions_in_.size() == start_positions_out_.size());
 
-			assert(in_bv[in_bv.size()-1]);
-
-			bit_vector out_bv(new_OUT.size());
-			for(uint64_t i=0;i<new_OUT.size();++i)
-				out_bv[i] = new_OUT[i];
-
-			OUT = bitv_type(out_bv);
-			OUT_rank = typename bitv_type::rank_1_type(&OUT);
-			OUT_sel = typename bitv_type::select_1_type(&OUT);
-
-			IN = bitv_type(in_bv);
-			IN_rank = typename bitv_type::rank_1_type(&IN);
-			IN_sel = typename bitv_type::select_1_type(&IN);
+			nr_of_nodes = start_positions_in_.size();
 
 		}
 
-		C = vector<uint64_t>(5);
+		//overwirte F_
 
-		for(auto c : BWT) C[toINT(c)]++;
+		F_ = string();
+		F_.push_back('$');
 
-		C[0] = 1;//there is one $ in the F column (it's the only incoming edge of the root kmer $$$)
-		C[1] += C[0];
-		C[2] += C[1];
-		C[3] += C[2];
-		C[4] += C[3];
+		//count number of occurrences of ACGT
+		vector<uint64_t> counts(4,0);
 
-		C[4] = C[3];
-		C[3] = C[2];
-		C[2] = C[1];
-		C[1] = C[0];
-		C[0] = 0; //$ starts at position 0 in the F column
+		for(auto c:new_out_labels)
+			if(c!='$') counts[toINT(c)]++;
+
+		for(uint64_t i=0;i<counts[toINT('A')];++i) F_.push_back('A');
+		for(uint64_t i=0;i<counts[toINT('C')];++i) F_.push_back('C');
+		for(uint64_t i=0;i<counts[toINT('G')];++i) F_.push_back('G');
+		for(uint64_t i=0;i<counts[toINT('T')];++i) F_.push_back('T');
+
+		assert(F_.size() == IN_.size());
+		assert(OUT_.size() == out_labels_.size());
+		assert();
 
 		//prune weights
 
@@ -1093,15 +1012,43 @@ public:
 
 		weights_.resize(number_of_nodes());
 
-		assert(weights_.size() == number_of_nodes());
-		assert(OUT.size() == BWT.size());
-		assert(IN.size() == BWT.size()-BWT.rank(BWT.size(),'$')+1);
 		assert(weights_.size() == IN_rank(IN.size()));
+
+	}
+
+	/*
+	 * edge is represented as pair <node, rank> where rank is the rank among outgoing edges of node
+	 */
+	int weight_of_edge_(edge_t e){
+
+		assert(e.first<number_of_nodes());
+		assert(e.second < out_degree_(e.first));
+
+		assert(out_label_(e.first, e.second) != '$');
+
+		auto target = OUT_[start_positions_out_[e.first] + e.second];
+
+		assert(target<number_of_nodes());
+
+		return abundance_(e.first) - abundance_(target);
 
 	}
 
 private:
 
+	/*
+	 * abundance of node n (represented as integer, i.e. its rank among all nodes)
+	 */
+	int abundance_(uint64_t n){
+
+		assert(n<number_of_nodes());
+		return int(weights_[n]);
+
+	}
+
+	/*
+	 * returns character in position i of column F
+	 */
 	uint8_t F_int(uint64_t i){
 
 		uint8_t  c = i>=C[1] and i<C[2] ? 1 :
@@ -1175,12 +1122,13 @@ private:
 	}
 
 	/*
-	 * computes MST forest. Marks in mst edges of IN that are part of the MST
+	 * computes MST forest.
 	 * returns weight of the MST
 	 */
-	uint64_t MST(){
+	uint64_t MST_(){
 
-		bit_vector mst_bv(IN.size(),0);
+		parent_in_mst_ = vector<uint64_t>(nr_of_nodes,nr_of_nodes);//roots i will have parent_in_mst_[i] = nr_of_nodes
+		mst_out_edges_ = vector<bool>(OUT_.size(),false);
 
 		uint64_t weight = 0; //weight of the MST
 
@@ -1199,11 +1147,11 @@ private:
 
 			not_in_mst.erase(not_in_mst.find(u));
 
-			//pq contains edges (u,k). Let v = move_forward_by_rank(u,k). Then edge (u,v) is not in the MST
+			//pq contains edges (u,k). Let v = move_forward_by_rank_(u,k). Then edge (u,v) is not in the MST
 			priority_queue<edge_t, vector<edge_t>, comp_edge<decltype(*this)> > pq(*this);
 
-			for(uint8_t k = 0; k<out_degree(u);++k)
-				if(out_label(u,k)!='$')
+			for(uint8_t k = 0; k<out_degree_(u);++k)
+				if(out_label_(u,k)!='$')
 					pq.push({u,k});
 
 			while(not pq.empty()){
@@ -1217,21 +1165,22 @@ private:
 					e = pq.top();
 					pq.pop();
 
-					v = move_forward_by_rank(e.first,e.second);
+					v = move_forward_by_rank_(e.first,e.second);
 
 				}while((not pq.empty()) && not_in_mst.find(v) == not_in_mst.end());
 
 				//frontier edge found
 				if(not_in_mst.find(v) != not_in_mst.end()){
 
-					weight += cost_of_weight(weight_of_edge(e));//weight of MST
+					weight += cost_of_weight(weight_of_edge_(e));//weight of MST
 
 					not_in_mst.erase(not_in_mst.find(v));
-					for(uint8_t k = 0; k<out_degree(v);++k)
-						if(out_label(v,k)!='$')
+					for(uint8_t k = 0; k<out_degree_(v);++k)
+						if(out_label_(v,k)!='$')
 							pq.push({v,k});
 
-					mst_bv[edge_pos_in_IN(e)] = 1;
+					parent_in_mst_[v] = e.first;
+					mst_out_edges_[start_positions_out_[e.first] + e.second] = true;
 
 				}
 
@@ -1243,68 +1192,47 @@ private:
 
 		assert(not_in_mst.size()==0);
 
-		mst = rrr_vector<>(mst_bv);
-		mst_rank = rrr_vector<>::rank_1_type(&mst);
-
 		return weight;
 
 	}
 
 	void build_deltas(){
 
-		vector<uint64_t> deltas_int;
+		//for each node
+		for(uint64_t i = 0; i<nr_of_nodes; ++i){
 
-		//for each character in F column
-		for(uint64_t i = 0; i<IN.size(); ++i){
+			//if the node is not the root of a tree in the MST forest
+			if(parent_in_mst_[i] != nr_of_nodes){
 
-			//if the character corresponds to a mst edge
-			if(mst[i]){
-
-				//find the two endpoints of the edge
-				uint64_t source = OUT_rank(FL(i));
-				uint64_t dest = IN_rank(i);
-
-				int w1 = abundance(source);
-				int w2 = abundance(dest);
+				int w1 = abundance_(parent_in_mst_[i]);
+				int w2 = abundance_(i);
 
 				auto encoded_diff = int_to_positive(w1-w2);
 
-				deltas_int.push_back(encoded_diff);
+				deltas_.push_back(encoded_diff);
 
 			}
 
 		}
-
-		assert(mst_rank(mst.size()) == deltas_int.size());
-
-		deltas = cint_vector(deltas_int);
 
 	}
 
 	/*
 	 * is n a leaf of the MST?
 	 */
-	bool is_leaf(uint64_t n){
+	bool is_leaf_(uint64_t n){
 
-		uint8_t out_deg = out_degree(n);
+		uint8_t out_deg = out_degree_(n);
 
 		assert(out_deg>0);
 
-		uint64_t first_edge = edge_pos_in_bwt({n,0});
-		uint64_t last_edge = first_edge + out_deg-1;
-
 		bool out_edge_found = false;
 
-		while(first_edge<=last_edge){
+		uint64_t start = start_positions_out_[n];
 
-			if(BWT[first_edge] != '$'){
+		for(uint8_t k=0; k < out_deg;++k){
 
-				auto pos_in_F = LF(first_edge);
-				out_edge_found = out_edge_found or mst[pos_in_F];
-
-			}
-
-			first_edge++;
+			out_edge_found = out_edge_found or mst_out_edges_[start+k];
 
 		}
 
@@ -1313,51 +1241,13 @@ private:
 	}
 
 	/*
-	 * returns parent of n in the MST
-	 */
-	uint64_t parent_in_mst(uint64_t n){
-
-		assert(not is_root_in_mst(n));
-
-		auto in_deg = in_degree(n);
-
-		uint64_t first_pos = n==0?0:IN_sel(n)+1;
-		uint64_t last_pos = first_pos+in_deg-1;
-
-		//there can be only 1 incoming edge in the MST
-		assert(mst_rank(last_pos+1) == mst_rank(first_pos)+1);
-
-		while(not mst[first_pos] and first_pos <= last_pos) first_pos++;
-
-		assert(first_pos <= last_pos);
-
-		return OUT_rank(FL(first_pos));
-
-	}
-
-	/*
 	 * true iff n is a root in the mst forest
 	 */
-	bool is_root_in_mst(uint64_t n){
+	bool is_root_in_mst_(uint64_t n){
 
-		auto in_deg = in_degree(n);
+		assert(n < nr_of_nodes);
 
-		uint64_t first_pos = n==0?0:IN_sel(n)+1;
-		uint64_t last_pos = first_pos+in_deg-1;
-
-		return mst_rank(last_pos+1) == mst_rank(first_pos);
-
-	}
-
-	/*
-	 * true iff position i in the BWT is a MST edge
-	 */
-	bool mst_edge_on_bwt(uint64_t i){
-
-		if(BWT[i] == '$')
-			return false;
-
-		return mst[LF(i)];
+		return parent_in_mst_[n] != nr_of_nodes;
 
 	}
 
@@ -1371,18 +1261,18 @@ private:
 		//rrr_vector<> sampled;
 		//rrr_vector<>::rank_1_type sampled_rank;
 
-		bit_vector sampled_bv(number_of_nodes(),0);
+		sampled_ = vector<bool>(nr_of_nodes,false);
 
 		//post-order visit of the MST
 		queue<uint64_t> nodes;
 
 		//size of each component of the tree decomposition
-		vector<uint16_t> component_size(number_of_nodes(),1);
+		vector<uint32_t> component_size(nr_of_nodes,1);
 
 		//first insert all leaves
 		for(uint64_t i = 0;i<number_of_nodes();++i){
 
-			if(is_leaf(i))
+			if(is_leaf_(i))
 				nodes.push(i);
 
 		}
@@ -1392,18 +1282,18 @@ private:
 			auto n = nodes.front();
 			nodes.pop();
 
-			auto out_deg = out_degree(n);
+			auto out_deg = out_degree_(n);
 
 			uint16_t sum_of_component_sizes = 1;
 
 			for(uint8_t k=0;k<out_deg;++k){
 
-				uint64_t pos = edge_pos_in_bwt({n,k});
+				uint64_t pos = edge_pos_in_OUT_({n,k});
 
 				//for each MST edge leaving n
-				if(mst_edge_on_bwt(pos)){
+				if(mst_out_edges_[pos]){
 
-					sum_of_component_sizes += component_size[move_forward_by_rank(n,k)];
+					sum_of_component_sizes += component_size[move_forward_by_rank_(n,k)];
 
 				}
 
@@ -1414,58 +1304,28 @@ private:
 				}else{
 
 					component_size[n] = 0;
-					sampled_bv[n] = 1;
+					sampled_[n] = 1;
 
 				}
 
 			}
 
-			if(not is_root_in_mst(n))
-				nodes.push(parent_in_mst(n));
+			if(not is_root_in_mst_(n))
+				nodes.push(parent_in_mst_[n]);
 			else
-				sampled_bv[n] = 1;//roots are always sampled
+				sampled_[n] = 1;//roots are always sampled
 
 		}
 
-		assert(sampled_bv[0] == 1);
-
-		sampled = rrr_vector<>(sampled_bv);
-		sampled_rank = rrr_vector<>::rank_1_type(&sampled);
-
-		vector<uint32_t> samples_bv;
+		assert(sampled_[0] == 1);
 
 		for(uint64_t i=0;i<number_of_nodes();++i){
 
 			if(sampled[i])
-				samples_bv.push_back(weights_[i]);
+				samples_.push_back(weights_[i]);
 
 		}
-
-		samples = cint_vector(samples_bv);
-
-		cout << samples.size() << " sampled weights" << endl;
-
-	}
-
-	/*
-	 * for debug only: prints all structures
-	 */
-	void print_all(){
-
-		cout << "BOSS: " << endl;
-
-		for(auto b : IN) cout << int(b);
-		cout << endl;
-
-		for(int i=0;i<BWT.size();++i)
-			cout << F(i);
-		cout << endl;
-
-		for(auto c : BWT) cout << c;
-		cout << endl;
-
-		for(auto b : OUT) cout << int(b);
-		cout << endl;
+		cout << samples_.size() << " sampled weights" << endl;
 
 	}
 
@@ -1491,11 +1351,19 @@ private:
 	vector<uint32_t> IN_; //incoming edges
 
 	vector<uint32_t> start_positions_in_; //for each node, its starting position in IN_
-	vector<uint32_t> start_positions_out_; //for each node, its starting position in OUT_ and BWT_
+	vector<uint32_t> start_positions_out_; //for each node, its starting position in OUT_ and out_labels_
 
 	vector<uint32_t> weights_; //one weight per node
 
 	vector<uint32_t> parent_in_mst_; //one per node. For the roots we write nr_of_nodes
+	vector<bool> mst_out_edges_; //marks outgoing edges of the MST, in OUT_ order
+
+	//deltas on MST out edges
+	vector<uint64_t> deltas_;
+
+	vector<bool> sampled_; 	//marks sampled nodes on the dBg
+
+	vector<uint64_t> samples_; 	//weight samples
 
 	/*
 	 * compressed data structures
