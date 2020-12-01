@@ -206,9 +206,6 @@ public:
 
 		assert(k>0 and k<=41);
 
-		vector<bool> OUT_; //out-degrees: mark last edge (in BWT order) of each new k-mer
-		vector<bool> last; //marks first edge (in BWT order) of each new (k-1)-mer
-
 		if(verbose)
 			cout << "Computing how much memory I need to allocate ..." << endl;
 
@@ -323,8 +320,6 @@ public:
 
 			uint32_t count = 1;
 
-			int n_nodes = 0;
-
 			for(uint64_t i = 1; i<kmers.size();++i){
 
 				//if kmer changes
@@ -375,6 +370,14 @@ public:
 
 			weights_.push_back(count);//push back weight of the lasst kmer
 
+			nr_of_nodes = start_positions_out_.size();
+
+		    OUT_ = vector<uint64_t>(out_labels_.size());
+
+		    //delete char labeling outgoing edge from each (k+1)-mer, obtaining the k-mers
+		    for(uint64_t i=0;i<kmers.size();++i)
+		    	kmers[i] = kmers[i]>>3;
+
 			if(verbose)
 				cout << "Done. Resizing k-mers ..." << endl;
 
@@ -383,30 +386,66 @@ public:
 		    kmers.resize(distance(kmers.begin(), it));
 		    //kmers.shrink_to_fit();
 
-		    assert(kmers.size() == out_labels_.size());
-		    OUT_ = vector<uint64_t>(out_labels_.size()));
+		    assert(kmers.size() == nr_of_nodes);
 
-		    //TODO fill OUT_ by searching
+		    start_positions_in_ = vector<uint64_t>(nr_of_nodes,0);
+
+		    for(uint64_t i=0;i<nr_of_nodes;++i){
+
+		    	uint64_t out_deg = out_degree_(i);
+
+		    	for(uint8_t off=0;off<out_deg;++off){
+
+		    		//outgoing label
+		    		char c = out_labels_[start_positions_out_[i]+off];
+
+		    		if(c!='$'){
+
+						__uint128_t succ_kmer = (kmers[i]>>3) | (toINT(c)<<(3*(k-1)));
+
+						uint64_t successor = distance(kmers.begin(), lower_bound(kmers.begin(), kmers.end(), succ_kmer));
+
+						assert( successor < nr_of_nodes && kmers[successor]==succ_kmer );
+
+						OUT_[start_positions_out_[i]+off] = successor;
+
+						start_positions_in_[successor]++;
+
+		    		}
+
+		    	}
+
+		    }
+
+		    start_positions_in_[0]=1;
+
+		    for(auto x : start_positions_in_){
+		    	assert(x>0);
+		    }
+
+		    //TODO cumulate in start_positions_in_
+
+			F_ = string();
+			F_.push_back('$');
+
+			//count number of occurrences of ACGT
+			vector<uint64_t> counts(4,0);
+
+			for(auto c:out_labels_)
+				if(c!='$') counts[toINT(c)]++;
+
+			for(uint64_t i=0;i<counts[toINT('A')];++i) F_.push_back('A');
+			for(uint64_t i=0;i<counts[toINT('C')];++i) F_.push_back('C');
+			for(uint64_t i=0;i<counts[toINT('G')];++i) F_.push_back('G');
+			for(uint64_t i=0;i<counts[toINT('T')];++i) F_.push_back('T');
+
+			IN_ = vector<uint64_t>(F_.size(),nr_of_nodes);
+
+			// TODO fill IN_
+
 
 		}//end scope of vector<__uint128_t> kmers;
 
-		F_ = string();
-		F_.push_back('$');
-
-		//count number of occurrences of ACGT
-		vector<uint64_t> counts(4,0);
-
-		for(auto c:out_labels_)
-			if(c!='$') counts[toINT(c)]++;
-
-		for(uint64_t i=0;i<counts[toINT('A')];++i) F_.push_back('A');
-		for(uint64_t i=0;i<counts[toINT('C')];++i) F_.push_back('C');
-		for(uint64_t i=0;i<counts[toINT('G')];++i) F_.push_back('G');
-		for(uint64_t i=0;i<counts[toINT('T')];++i) F_.push_back('T');
-
-		IN_ = vector<uint64_t>(F_.size(),nr_of_nodes);
-
-		// TOOD fill IN_
 
 		MEAN_WEIGHT /= (weights_.size()-padded_kmers);
 
@@ -665,7 +704,7 @@ public:
 
 		assert(k<out_degree_(node));
 
-		return out_labels_[start_positions_out_[e.first] + e.second];
+		return out_labels_[start_positions_out_[node] + k];
 
 	}
 
@@ -920,7 +959,7 @@ public:
 		//count number of occurrences of ACGT
 		vector<uint64_t> counts(4,0);
 
-		for(auto c:new_out_labels)
+		for(auto c:out_labels_)
 			if(c!='$') counts[toINT(c)]++;
 
 		for(uint64_t i=0;i<counts[toINT('A')];++i) F_.push_back('A');
