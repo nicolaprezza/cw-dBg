@@ -357,7 +357,7 @@ public:
 
 					//we set to 0 the counters of kmers that contain $
 					count = has_dollars(prev_kmer)?0:count;
-					weights.push_back(count); //I'm pushing the weight of the previous kmer
+					weights_.push_back(count); //I'm pushing the weight of the previous kmer
 
 					if(not has_dollars(prev_kmer)){
 						MAX_WEIGHT = count>MAX_WEIGHT?count:MAX_WEIGHT;
@@ -404,13 +404,13 @@ public:
 				padded_kmers++;
 			}
 
-			weights.push_back(count);//push back weight of the lasst kmer
+			weights_.push_back(count);//push back weight of the lasst kmer
 			assert(OUT_.size() == BWT_.length());
 			assert(last.size() == BWT_.length());
 
 		}//end scope of vector<__uint128_t> kmers;
 
-		MEAN_WEIGHT /= (weights.size()-padded_kmers);
+		MEAN_WEIGHT /= (weights_.size()-padded_kmers);
 
 		C = vector<uint64_t>(5);
 
@@ -455,7 +455,7 @@ public:
 		OUT_rank = typename bitv_type::rank_1_type(&OUT);
 		OUT_sel = typename bitv_type::select_1_type(&OUT);
 
-		assert(weights.size() == OUT_rank(OUT.size()));
+		assert(weights_.size() == OUT_rank(OUT.size()));
 
 		{
 
@@ -561,8 +561,8 @@ public:
 
 		//contruction ended. Free space of weights
 
-		weights.clear();
-		weights.shrink_to_fit();
+		weights_.clear();
+		weights_.shrink_to_fit();
 
 	}
 
@@ -610,7 +610,7 @@ public:
 	 */
 	uint64_t number_of_nodes(){
 
-		return OUT_rank(OUT.size());
+		return nr_of_nodes;
 
 	}
 
@@ -620,7 +620,6 @@ public:
 	uint64_t number_of_padded_kmers(){
 
 		return padded_kmers;
-
 	}
 
 	uint64_t number_of_distinct_kmers(){
@@ -691,7 +690,7 @@ public:
 
 		auto idx = find_kmer(kmer);
 
-		return idx == number_of_nodes()?0:weights[idx]; //TODO: use the compressed weights once 'weights' has been freed
+		return idx == number_of_nodes()?0:weights_[idx]; //TODO: use the compressed weights once 'weights' has been freed
 
 	}
 
@@ -701,7 +700,7 @@ public:
 	int abundance(uint64_t n){
 
 		assert(n<number_of_nodes());
-		return int(weights[n]); //TODO: use the compressed weights once 'weights' has been freed
+		return int(weights_[n]); //TODO: use the compressed weights once 'weights' has been freed
 
 	}
 
@@ -1089,23 +1088,19 @@ public:
 
 		uint64_t idx=0;
 
-		for(uint64_t i=0;i<weights.size();++i)
-			if(necessary_node[i]) weights[idx++] = weights[i];
+		for(uint64_t i=0;i<weights_.size();++i)
+			if(necessary_node[i]) weights_[idx++] = weights_[i];
 
-		weights.resize(number_of_nodes());
+		weights_.resize(number_of_nodes());
 
-		assert(weights.size() == number_of_nodes());
+		assert(weights_.size() == number_of_nodes());
 		assert(OUT.size() == BWT.size());
 		assert(IN.size() == BWT.size()-BWT.rank(BWT.size(),'$')+1);
-		assert(weights.size() == IN_rank(IN.size()));
+		assert(weights_.size() == IN_rank(IN.size()));
 
 	}
 
 private:
-
-	uint64_t MAX_WEIGHT = 0;
-	double MEAN_WEIGHT = 0;
-	uint64_t padded_kmers = 0;//number of k-mers padded with $
 
 	uint8_t F_int(uint64_t i){
 
@@ -1378,9 +1373,6 @@ private:
 
 		bit_vector sampled_bv(number_of_nodes(),0);
 
-		//root is always sampled
-		sampled_bv[0] = 1;
-
 		//post-order visit of the MST
 		queue<uint64_t> nodes;
 
@@ -1428,9 +1420,14 @@ private:
 
 			}
 
-			if(not is_root_in_mst(n)) nodes.push(parent_in_mst(n));
+			if(not is_root_in_mst(n))
+				nodes.push(parent_in_mst(n));
+			else
+				sampled_bv[n] = 1;//roots are always sampled
 
 		}
+
+		assert(sampled_bv[0] == 1);
 
 		sampled = rrr_vector<>(sampled_bv);
 		sampled_rank = rrr_vector<>::rank_1_type(&sampled);
@@ -1440,7 +1437,7 @@ private:
 		for(uint64_t i=0;i<number_of_nodes();++i){
 
 			if(sampled[i])
-				samples_bv.push_back(weights[i]);
+				samples_bv.push_back(weights_[i]);
 
 		}
 
@@ -1472,12 +1469,37 @@ private:
 
 	}
 
-
-
 	//parameters:
 
 	uint8_t k; //order
 	uint16_t srate; //sample rate
+	uint64_t nr_of_nodes; //number of nodes
+	uint64_t MAX_WEIGHT = 0; //max abundance
+	double MEAN_WEIGHT = 0; //mean abundance
+	uint64_t padded_kmers = 0;//number of nodes corresponding to a k-mers padded with $
+
+
+	/*
+	 * temporary fast data structures used during construction
+	 * convention: we end them by underscore
+	 */
+
+	//labels of outgoing edges. Corresponds to the BWT, except that there can be unnecessary $ here (will be removed in BWT)
+	string out_labels_;
+	string F_; //labels of incoming edges
+	vector<uint32_t> OUT_; //outgoing edges
+	vector<uint32_t> IN_; //incoming edges
+
+	vector<uint32_t> start_positions_in_; //for each node, its starting position in IN_
+	vector<uint32_t> start_positions_out_; //for each node, its starting position in OUT_ and BWT_
+
+	vector<uint32_t> weights_; //one weight per node
+
+	vector<uint32_t> parent_in_mst_; //one per node. For the roots we write nr_of_nodes
+
+	/*
+	 * compressed data structures
+	 */
 
 	//BOSS:
 
@@ -1492,10 +1514,6 @@ private:
 	bitv_type OUT;
 	typename bitv_type::rank_1_type OUT_rank;
 	typename bitv_type::select_1_type OUT_sel;
-
-	//weights:
-
-	vector<uint32_t> weights;
 
 	cint_vector deltas; //compressed deltas on the edges of the MST, in IN order (i.e. on the F column)
 
