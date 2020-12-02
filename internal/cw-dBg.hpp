@@ -404,9 +404,6 @@ public:
 		kmers.resize(distance(kmers.begin(), it));
 		//kmers.shrink_to_fit();
 
-		//TODO
-		cout << kmer_to_str_(kmers[1],k) << endl;
-
 		assert(kmers.size() == nr_of_nodes);
 
 		start_positions_in_ = vector<uint64_t>(nr_of_nodes,0);
@@ -492,19 +489,19 @@ public:
 		//the $ of the source starts at position 0 in IN
 		start_positions_in_[0]=0;
 
-		F_ = string();
-		F_.push_back('$');//incoming label of the root
-
 		//count number of occurrences of ACGT
 		vector<uint64_t> counts(4,0);
 
 		for(auto c:out_labels_)
 			if(c!='$') counts[toINT(c)]++;
 
-		for(uint64_t i=0;i<counts[toINT('A')];++i) F_.push_back('A');
-		for(uint64_t i=0;i<counts[toINT('C')];++i) F_.push_back('C');
-		for(uint64_t i=0;i<counts[toINT('G')];++i) F_.push_back('G');
-		for(uint64_t i=0;i<counts[toINT('T')];++i) F_.push_back('T');
+		F_ = string(1+counts[toINT('A')]+counts[toINT('C')]+counts[toINT('G')]+counts[toINT('T')],'$');
+
+		uint64_t idx = 1;
+		for(uint64_t i=0;i<counts[toINT('A')];++i) F_[idx++]='A';
+		for(uint64_t i=0;i<counts[toINT('C')];++i) F_[idx++]='C';
+		for(uint64_t i=0;i<counts[toINT('G')];++i) F_[idx++]='G';
+		for(uint64_t i=0;i<counts[toINT('T')];++i) F_[idx++]='T';
 
 		IN_ = vector<uint64_t>(F_.size(),nr_of_nodes);
 
@@ -520,10 +517,12 @@ public:
 
 				//outgoing label
 				char c = out_labels_[start_positions_out_[i]+off];
+				assert(c=='$' or c=='A' or c=='C' or c=='G' or c=='T');
 
 				if(c!='$'){
 
 					uint64_t successor = OUT_[start_positions_out_[i]+off];
+
 					IN_[start_positions_in_[successor]++] = i;
 
 
@@ -545,6 +544,7 @@ public:
 
 		//the $ of the source starts at position 0 in IN
 		start_positions_in_[0]=0;
+		start_positions_in_[1]=1;
 
 		MEAN_WEIGHT /= (weights_.size()-padded_kmers);
 
@@ -567,7 +567,6 @@ public:
 		C[0] = 0; //$ starts at position 0 in the F column
 */
 
-
 		if(not do_not_optimize)	prune(verbose);
 
 		//compute MST
@@ -575,27 +574,20 @@ public:
 		if(verbose)
 			cout << "Computing MST ... " << endl;
 
-		auto w = MST_();
+		auto w = MST_(verbose);
 
 		if(verbose)
-			cout << "Done. Weight of MST: " << w << " bits (" << double(w)/number_of_distinct_kmers() << " bits/kmer if stored with Elias Gamma)" << endl;
+			cout << " Weight of MST: " << w << " bits (" << double(w)/number_of_distinct_kmers() << " bits/kmer if stored with Elias Gamma)" << endl;
 
 		if(verbose)
-			cout << "Computing compressed deltas on the MST edges ... " << endl;
+			cout << "Computing deltas on the MST edges ... " << endl;
 
 		build_deltas();
 
 		if(verbose)
-			cout << "Done." << endl;
-
-		if(verbose)
 			cout << "Computing MST tree decomposition (samples) ... " << endl;
 
-		macro_tree_decomposition();
-
-		if(verbose)
-			cout << "Done." << endl;
-
+		macro_tree_decomposition(verbose);
 
 
 
@@ -868,7 +860,7 @@ public:
 			cout << " Number of distinct kmers " << number_of_distinct_kmers() << endl;
 			cout << " Number of padded kmers " << number_of_padded_kmers() << endl;
 			cout << " Number of nodes (distinct kmers + padded kmers) " << number_of_nodes() << endl;
-			cout << " Number of edges " << number_of_edges() << endl;
+			cout << " Number of edges " << out_labels_.size() << endl;
 
 		}
 
@@ -907,16 +899,6 @@ public:
 
 						S.push({move_forward_by_rank_(n,i),d+1});
 
-						//TODO
-						cout << move_forward_by_rank_(n,i) << " " << int(in_degree_(move_forward_by_rank_(n,i))) << endl;
-
-						if(move_forward_by_rank_(n,i)==1){
-
-							auto xx = 1;
-							cout << IN_[start_positions_in_[xx]] << " and " << IN_[start_positions_in_[xx]] << endl;
-
-						}
-
 						assert(in_degree_(move_forward_by_rank_(n,i))==1);
 						assert(move_backward_(move_forward_by_rank_(n,i),0) == n);
 
@@ -929,6 +911,7 @@ public:
 		}
 
 		//check on padded nodes
+
 		/*
 		for(uint64_t n = 0; n<number_of_nodes();++n){
 
@@ -970,7 +953,7 @@ public:
 
 		}
 
-		assert(necessary_node[0]);
+		necessary_node[0] = true;
 
 		//update padded_kmers
 		padded_kmers = 0;
@@ -990,7 +973,6 @@ public:
 
 			for(uint64_t n = 0;n<number_of_nodes();++n){
 
-				//append to new_out_labels, new_IN, new_OUT only if the node is necessary
 				if(necessary_node[n]){
 
 					new_start_positions_in.push_back(start_IN);
@@ -1007,7 +989,6 @@ public:
 						if(n == 0 || necessary_node[move_backward_(n,k)]){
 
 							new_in_deg++;
-							new_IN.push_back(n==0?nr_of_nodes:move_backward_(n,k));
 
 						}
 
@@ -1029,7 +1010,6 @@ public:
 							//insert $ in new_out_labels only if the node has out-degree = 1 (i.e. has only $ as outgoing edge)
 							if(out_deg==1){
 								new_out_deg++;
-								new_OUT.push_back(nr_of_nodes);
 								new_out_labels.push_back(c);
 							}
 
@@ -1039,7 +1019,6 @@ public:
 
 							if(necessary_node[move_forward_by_rank_(n,k)]){
 								new_out_labels.push_back(c);
-								new_OUT.push_back(move_forward_by_rank_(n,k));
 								new_out_deg++;
 							}
 
@@ -1057,12 +1036,13 @@ public:
 					if(n==0 and new_out_deg == 0){
 						new_out_labels.push_back('$');
 						new_out_deg=1;
-						new_OUT.push_back(nr_of_nodes);
 					}
 
 				}
 
 			}
+
+			//TODO compute new_IN, new_OUT
 
 			out_labels_ = new_out_labels;
 			IN_ = new_IN;
@@ -1078,33 +1058,33 @@ public:
 
 		//overwirte F_
 
-		F_ = string();
-		F_.push_back('$');
-
 		//count number of occurrences of ACGT
 		vector<uint64_t> counts(4,0);
 
 		for(auto c:out_labels_)
 			if(c!='$') counts[toINT(c)]++;
 
-		for(uint64_t i=0;i<counts[toINT('A')];++i) F_.push_back('A');
-		for(uint64_t i=0;i<counts[toINT('C')];++i) F_.push_back('C');
-		for(uint64_t i=0;i<counts[toINT('G')];++i) F_.push_back('G');
-		for(uint64_t i=0;i<counts[toINT('T')];++i) F_.push_back('T');
+		F_ = string(1+counts[toINT('A')]+counts[toINT('C')]+counts[toINT('G')]+counts[toINT('T')],'$');
+
+		uint64_t idx = 1;
+		for(uint64_t i=0;i<counts[toINT('A')];++i) F_[idx++]='A';
+		for(uint64_t i=0;i<counts[toINT('C')];++i) F_[idx++]='C';
+		for(uint64_t i=0;i<counts[toINT('G')];++i) F_[idx++]='G';
+		for(uint64_t i=0;i<counts[toINT('T')];++i) F_[idx++]='T';
 
 		assert(F_.size() == IN_.size());
 		assert(OUT_.size() == out_labels_.size());
 
 		//prune weights
 
-		uint64_t idx=0;
+		idx=0;
 
 		for(uint64_t i=0;i<weights_.size();++i)
 			if(necessary_node[i]) weights_[idx++] = weights_[i];
 
-		weights_.resize(number_of_nodes());
+		assert(idx == number_of_nodes());
 
-		assert(weights_.size() == IN_rank(IN.size()));
+		weights_.resize(number_of_nodes());
 
 	}
 
@@ -1217,7 +1197,7 @@ private:
 	 * computes MST forest.
 	 * returns weight of the MST
 	 */
-	uint64_t MST_(){
+	uint64_t MST_(bool verbose){
 
 		parent_in_mst_ = vector<uint64_t>(nr_of_nodes,nr_of_nodes);//roots i will have parent_in_mst_[i] = nr_of_nodes
 		mst_out_edges_ = vector<bool>(OUT_.size(),false);
@@ -1280,7 +1260,8 @@ private:
 
 		}
 
-		cout << "Number of connected components : " << n_MST << endl;
+		if(verbose)
+			cout << " Number of connected components : " << n_MST << endl;
 
 		assert(not_in_mst.size()==0);
 
@@ -1303,9 +1284,15 @@ private:
 
 				deltas_.push_back(encoded_diff);
 
+			}else{//push 0
+
+				deltas_.push_back(0);
+
 			}
 
 		}
+
+		assert(deltas_.size() == number_of_nodes());
 
 	}
 
@@ -1339,7 +1326,7 @@ private:
 
 		assert(n < nr_of_nodes);
 
-		return parent_in_mst_[n] != nr_of_nodes;
+		return parent_in_mst_[n] == nr_of_nodes;
 
 	}
 
@@ -1348,7 +1335,7 @@ private:
 	 * decomposes the tree in subtrees of size Theta(srate). In the end, marks
 	 * the roots of the subtrees using bitvector 'sampled'
 	 */
-	void macro_tree_decomposition(){
+	void macro_tree_decomposition(bool verbose){
 
 		//rrr_vector<> sampled;
 		//rrr_vector<>::rank_1_type sampled_rank;
@@ -1359,6 +1346,7 @@ private:
 		queue<uint64_t> nodes;
 
 		//size of each component of the tree decomposition
+		//at the beginning, each component contains just the node itself.
 		vector<uint32_t> component_size(nr_of_nodes,1);
 
 		//first insert all leaves
@@ -1380,10 +1368,10 @@ private:
 
 			for(uint8_t k=0;k<out_deg;++k){
 
-				uint64_t pos = edge_pos_in_OUT_({n,k});
+				uint64_t pos = start_positions_out_[n] + k;
 
-				//for each MST edge leaving n
-				if(mst_out_edges_[pos]){
+				//for each MST edge leaving n that does not lead to a completed subtree
+				if(mst_out_edges_[pos] and not sampled_[OUT_[pos]]){
 
 					sum_of_component_sizes += component_size[move_forward_by_rank_(n,k)];
 
@@ -1395,7 +1383,7 @@ private:
 
 				}else{
 
-					component_size[n] = 0;
+					//component_size[n] = sum_of_component_sizes;
 					sampled_[n] = 1;
 
 				}
@@ -1413,11 +1401,13 @@ private:
 
 		for(uint64_t i=0;i<number_of_nodes();++i){
 
-			if(sampled[i])
+			if(sampled_[i])
 				samples_.push_back(weights_[i]);
 
 		}
-		cout << samples_.size() << " sampled weights" << endl;
+
+		if(verbose)
+			cout << " " << samples_.size() << " sampled weights" << endl;
 
 	}
 
@@ -1451,6 +1441,7 @@ private:
 	vector<bool> mst_out_edges_; //marks outgoing edges of the MST, in OUT_ order
 
 	//deltas on MST out edges
+	//for each node n, deltas_[n] is the weight of the edge leading to n, or 0 if n is a root.
 	vector<uint64_t> deltas_;
 
 	vector<bool> sampled_; 	//marks sampled nodes on the dBg
