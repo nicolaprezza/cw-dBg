@@ -143,6 +143,21 @@ __uint128_t edge(__uint128_t kmer, uint8_t c, uint8_t k){
 
 }
 
+string kmer_to_str_(__uint128_t kmer, int k){
+
+	string km;
+
+	for(int i=0;i<k;++i){
+
+		km += toCHAR(kmer & __uint128_t(7));
+		kmer = kmer >> 3;
+
+	}
+
+	return km;
+
+}
+
 string kmer_to_str(__uint128_t kmer, int k){
 
 	char edge = toCHAR(kmer & __uint128_t(7));
@@ -246,7 +261,7 @@ public:
 			ifstream file(filename);
 
 			if(verbose){
-				cout << "Done. Number of bases: " << tot_bases << endl;
+				cout << "Number of bases: " << tot_bases << endl;
 				cout << "Trying to allocate " << pre_allocation*16 << " Bytes ... " << endl;
 			}
 
@@ -261,7 +276,7 @@ public:
 			kmers.reserve(pre_allocation);
 
 			if(verbose)
-				cout << "Done. Extracting k-mers from dataset ..." << endl;
+				cout << "Extracting k-mers from dataset ..." << endl;
 
 			string str;
 			while (std::getline(file, str) and (nlines == 0 or read_lines < nlines)) { //getline reads header
@@ -305,12 +320,12 @@ public:
 			}
 
 			if(verbose)
-				cout << "Done. Sorting k-mers ..." << endl;
+				cout << "Sorting k-mers ..." << endl;
 
 			sort(kmers.begin(),kmers.end());
 
 			if(verbose)
-				cout << "Done. In/out-degrees, edge labels, and weights ..." << endl;
+				cout << "Computing in/out-degrees, edge labels, and weights ..." << endl;
 
 			//previous kmer read from kmers.
 			__uint128_t prev_kmer = kmers[0];
@@ -379,7 +394,7 @@ public:
 		    	kmers[i] = kmers[i]>>3;
 
 			if(verbose)
-				cout << "Done. Resizing k-mers ..." << endl;
+				cout << "Resizing k-mers ..." << endl;
 
 			//compact kmers by removing duplicates
 		    auto it = unique(kmers.begin(), kmers.end());
@@ -401,11 +416,20 @@ public:
 
 		    		if(c!='$'){
 
-						__uint128_t succ_kmer = (kmers[i]>>3) | (toINT(c)<<(3*(k-1)));
+						__uint128_t succ_kmer = (kmers[i]>>3) | (__uint128_t(toINT(c))<<(3*(k-1)));
 
-						uint64_t successor = distance(kmers.begin(), lower_bound(kmers.begin(), kmers.end(), succ_kmer));
+						//cout << "----" << kmer_to_str_(kmers[i],k) << " " << c << " " << kmer_to_str_(succ_kmer,k)  << endl;
 
-						assert( successor < nr_of_nodes && kmers[successor]==succ_kmer );
+						auto it = lower_bound(kmers.begin(), kmers.end(), succ_kmer);
+
+						assert(it != kmers.end());//destination kmer must be present
+
+						uint64_t successor = distance(kmers.begin(), it);
+
+						//cout << kmer_to_str_(succ_kmer,k) << " " << kmer_to_str_(kmers[successor],k) << endl;
+						//cout << successor << " / " << nr_of_nodes << endl;
+
+						assert( kmers[successor]==succ_kmer );
 
 						OUT_[start_positions_out_[i]+off] = successor;
 
@@ -417,16 +441,33 @@ public:
 
 		    }
 
+		    //add one incoming edge (the only one labeled $) to the source
 		    start_positions_in_[0]=1;
 
 		    for(auto x : start_positions_in_){
-		    	assert(x>0);
+		    	assert(x>0); //every node must have >0 incoming edges
 		    }
 
-		    //TODO cumulate in start_positions_in_
+		    //cumulate in start_positions_in_
+		    for(uint64_t i=1;i<nr_of_nodes;++i){
+
+		    	start_positions_in_[i] += start_positions_in_[i-1];
+
+		    }
+
+		    //right-shift start_positions_in_
+
+		    for(uint64_t i=nr_of_nodes-1; i>0; --i){
+
+				start_positions_in_[i] = start_positions_in_[i-1];
+
+			}
+
+		    //the $ of the source starts at position 0 in IN
+		    start_positions_in_[0]=0;
 
 			F_ = string();
-			F_.push_back('$');
+			F_.push_back('$');//incoming label of the root
 
 			//count number of occurrences of ACGT
 			vector<uint64_t> counts(4,0);
@@ -441,13 +482,47 @@ public:
 
 			IN_ = vector<uint64_t>(F_.size(),nr_of_nodes);
 
-			// TODO fill IN_
+			//fill IN_
 
+		    for(uint64_t i=0;i<nr_of_nodes;++i){
+
+		    	uint64_t out_deg = out_degree_(i);
+
+		    	for(uint8_t off=0;off<out_deg;++off){
+
+		    		//outgoing label
+		    		char c = out_labels_[start_positions_out_[i]+off];
+
+		    		if(c!='$'){
+
+						uint64_t successor = OUT_[start_positions_out_[i]+off];
+						IN_[start_positions_in_[successor++]] = i;
+
+
+		    		}
+
+		    	}
+
+		    }
+
+		    //right-shift start_positions_in_
+
+		    for(uint64_t i=nr_of_nodes-1; i>0; --i){
+
+				start_positions_in_[i] = start_positions_in_[i-1];
+
+			}
+
+		    //the $ of the source starts at position 0 in IN
+		    start_positions_in_[0]=0;
+
+		    exit(0);//TODO munmap_chunk(): invalid pointer
 
 		}//end scope of vector<__uint128_t> kmers;
 
 
 		MEAN_WEIGHT /= (weights_.size()-padded_kmers);
+
 
 		/*
 		C = vector<uint64_t>(5);
@@ -466,6 +541,7 @@ public:
 		C[1] = C[0];
 		C[0] = 0; //$ starts at position 0 in the F column
 */
+
 
 		if(not do_not_optimize)	prune(verbose);
 
@@ -1340,7 +1416,7 @@ private:
 
 	str_type BWT;
 
-	vector<uint64_t> C; //C array
+	vector<uint64_t> C; //C array (encoding F column of BWT matrix)
 
 	bitv_type IN;
 	typename bitv_type::rank_1_type IN_rank;
