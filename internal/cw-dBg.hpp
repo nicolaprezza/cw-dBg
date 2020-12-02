@@ -255,271 +255,296 @@ public:
 
 		}
 
-		//begin scope of huge vector<__uint128_t> kmers;
-		{
+		ifstream file(filename);
 
-			ifstream file(filename);
+		if(verbose){
+			cout << "Number of bases: " << tot_bases << endl;
+			cout << "Trying to allocate " << pre_allocation*16 << " Bytes ... " << endl;
+		}
 
-			if(verbose){
-				cout << "Number of bases: " << tot_bases << endl;
-				cout << "Trying to allocate " << pre_allocation*16 << " Bytes ... " << endl;
-			}
+		int read_lines=0;
 
-			int read_lines=0;
+		/*
+		 *  vector storing all (k+1)-mers (i.e. edges) using 3 bits per char
+		 *  format example: if k=3 and we have a kmer ACG followed by T, then we store an integer rev(ACG)T = GCAT
+		 *
+		 */
+		vector<__uint128_t> kmers;
+		kmers.reserve(pre_allocation);
 
-			/*
-			 *  vector storing all (k+1)-mers (i.e. edges) using 3 bits per char
-			 *  format example: if k=3 and we have a kmer ACG followed by T, then we store an integer rev(ACG)T = GCAT
-			 *
-			 */
-			vector<__uint128_t> kmers;
-			kmers.reserve(pre_allocation);
+		if(verbose)
+			cout << "Extracting k-mers from dataset ..." << endl;
 
-			if(verbose)
-				cout << "Extracting k-mers from dataset ..." << endl;
+		string str;
+		while (std::getline(file, str) and (nlines == 0 or read_lines < nlines)) { //getline reads header
 
-			string str;
-			while (std::getline(file, str) and (nlines == 0 or read_lines < nlines)) { //getline reads header
+			getline(file, str);//getline reads DNA
 
-				getline(file, str);//getline reads DNA
+			// start processing DNA fragment
 
-				// start processing DNA fragment
+			//first kmer: ($$$,C), where C is the first letter of str
 
-				//first kmer: ($$$,C), where C is the first letter of str
+			uint8_t first_char = toINT(str[0]);
 
-				uint8_t first_char = toINT(str[0]);
+			//if(first_char==0) cout << str<<endl;
+			assert(first_char!=0);
+			__uint128_t kmer = first_char;
 
-				//if(first_char==0) cout << str<<endl;
-				assert(first_char!=0);
-				__uint128_t kmer = first_char;
+			kmers.push_back(kmer);
 
+			//push the other kmers
+			for(int i=1;i<str.length();++i){
+
+				kmer = edge(kmer, toINT(str[i]),k);
 				kmers.push_back(kmer);
 
-				//push the other kmers
-				for(int i=1;i<str.length();++i){
+			}
 
-					kmer = edge(kmer, toINT(str[i]),k);
-					kmers.push_back(kmer);
+			//last kmer: (ACG,$), where ACG was the last kmer in the DNA fragment
+			kmer = edge(kmer, toINT('$'),k);
+			kmers.push_back(kmer);
+
+			if(format == fastq){
+				getline(file, str);//getline reads +
+				getline(file, str);//getline reads quality
+			}
+
+			read_lines++;
+
+			if(read_lines%1000000==0 and verbose)
+				cout << "read " << read_lines << " sequences" << endl;
+
+		}
+
+		if(verbose)
+			cout << "Sorting k-mers ..." << endl;
+
+		sort(kmers.begin(),kmers.end());
+
+		if(verbose)
+			cout << "Computing in/out-degrees, edge labels, and weights ..." << endl;
+
+		//previous kmer read from kmers.
+		__uint128_t prev_kmer = kmers[0];
+
+		start_positions_out_.push_back(0);
+		out_labels_.push_back(toCHAR(kmers[0] & __uint128_t(7)));
+		char c = out_labels_[out_labels_.size()-1];
+		assert(c=='$' or c=='A' or c=='C' or c=='G' or c=='T');
+
+		uint32_t count = 1;
+
+		for(uint64_t i = 1; i<kmers.size();++i){
+
+			//if kmer changes
+			if((kmers[i]>>3) != (prev_kmer>>3)){
+
+				//we set to 0 the counters of kmers that contain $
+				count = has_dollars(prev_kmer)?0:count;
+				weights_.push_back(count); //I'm pushing the weight of the previous kmer
+
+				if(not has_dollars(prev_kmer)){
+					MAX_WEIGHT = count>MAX_WEIGHT?count:MAX_WEIGHT;
+					MEAN_WEIGHT += count;
+				}else{
+					padded_kmers++;
+				}
+
+				count = 1; //start counting weight of this new kmer
+
+				start_positions_out_.push_back(out_labels_.size());
+				out_labels_.push_back(toCHAR(kmers[i] & __uint128_t(7)));//append to BWT first outgoing edge of this new kmer
+				char c = out_labels_[out_labels_.size()-1];
+				assert(c=='$' or c=='A' or c=='C' or c=='G' or c=='T');
+
+			}else{//same kmer
+
+				count++;
+
+				uint8_t curr_char = kmers[i] & __uint128_t(7);
+				uint8_t prev_char = prev_kmer & __uint128_t(7);
+
+				//if char of outgoing edge has changed
+				if( curr_char != prev_char ){
+
+					out_labels_.push_back(toCHAR(curr_char));
+					char c = out_labels_[out_labels_.size()-1];
+					assert(c=='$' or c=='A' or c=='C' or c=='G' or c=='T');
 
 				}
 
-				//last kmer: (ACG,$), where ACG was the last kmer in the DNA fragment
-				kmer = edge(kmer, toINT('$'),k);
-				kmers.push_back(kmer);
+			}
 
-				if(format == fastq){
-					getline(file, str);//getline reads +
-					getline(file, str);//getline reads quality
+			prev_kmer = kmers[i];
+
+		}
+
+		if(not has_dollars(prev_kmer)){
+			MAX_WEIGHT = count>MAX_WEIGHT?count:MAX_WEIGHT;
+			MEAN_WEIGHT += count;
+		}else{
+			padded_kmers++;
+		}
+
+		weights_.push_back(count);//push back weight of the last kmer
+
+		nr_of_nodes = start_positions_out_.size();
+
+		OUT_ = vector<uint64_t>(out_labels_.size());
+
+		//delete char labeling outgoing edge from each (k+1)-mer, obtaining the k-mers
+		for(auto & k : kmers)
+			k = k>>3;
+
+		if(verbose)
+			cout << "Resizing k-mers ..." << endl;
+
+		//compact kmers by removing duplicates
+		auto it = unique(kmers.begin(), kmers.end());
+		kmers.resize(distance(kmers.begin(), it));
+		//kmers.shrink_to_fit();
+
+		//TODO
+		cout << kmer_to_str_(kmers[1],k) << endl;
+
+		assert(kmers.size() == nr_of_nodes);
+
+		start_positions_in_ = vector<uint64_t>(nr_of_nodes,0);
+
+		for(uint64_t i=0;i<nr_of_nodes;++i){
+
+			uint64_t out_deg = out_degree_(i);
+
+			for(uint8_t off=0;off<out_deg;++off){
+
+				//outgoing label
+				assert(start_positions_out_[i]+off<out_labels_.size());
+				char c = out_labels_[start_positions_out_[i]+off];
+
+				assert(c=='$' or c=='A' or c=='C' or c=='G' or c=='T');
+
+				if(c!='$'){
+
+					__uint128_t succ_kmer = (kmers[i]>>3) | (__uint128_t(toINT(c))<<(3*(k-1)));
+
+					//cout << "----" << kmer_to_str_(kmers[i],k) << " " << c << " " << kmer_to_str_(succ_kmer,k)  << endl;
+
+					auto it = lower_bound(kmers.begin(), kmers.end(), succ_kmer);
+
+					assert(it != kmers.end());//destination kmer must be present
+
+					uint64_t successor = distance(kmers.begin(), it);
+
+					//cout << kmer_to_str_(succ_kmer,k) << " " << kmer_to_str_(kmers[successor],k) << endl;
+					//cout << successor << " / " << nr_of_nodes << endl;
+
+					assert( kmers[successor]==succ_kmer );
+
+					OUT_[start_positions_out_[i]+off] = successor;
+
+					//count how many edges enter in successor
+					start_positions_in_[successor]++;
+
+					//if(start_positions_in_[successor]>5)
+						//cout << "hmmmm: " << kmer_to_str_(succ_kmer,k) << endl;
+
 				}
 
-				read_lines++;
-
-				if(read_lines%1000000==0 and verbose)
-					cout << "read " << read_lines << " sequences" << endl;
-
 			}
 
-			if(verbose)
-				cout << "Sorting k-mers ..." << endl;
+		}
 
-			sort(kmers.begin(),kmers.end());
+		//for some reason this throws a munmap_chunk(): invalid pointer at the end of the scope ...
+		//kmers.clear();
+		//kmers.shrink_to_fit();
 
-			if(verbose)
-				cout << "Computing in/out-degrees, edge labels, and weights ..." << endl;
+		assert(start_positions_in_[0]==0);
 
-			//previous kmer read from kmers.
-			__uint128_t prev_kmer = kmers[0];
+		//add one incoming edge (the only one labeled $) to the source
+		start_positions_in_[0]=1;
 
-			start_positions_out_.push_back(out_labels_.size());
-			out_labels_.push_back(toCHAR(kmers[0] & __uint128_t(7)));
+		for(auto x : start_positions_in_){
+			assert(x>0); //every node must have >0 and <=5 incoming edges
+			assert(x<=5);
+		}
 
-			uint32_t count = 1;
+		/*
+		 *     1  3  2  1  2 --> cumulate -->
+		 *     1  4  6  7  9 --> right-shift -->
+		 *     0  1  4  6  7
+		 */
 
-			for(uint64_t i = 1; i<kmers.size();++i){
+		//cumulate in start_positions_in_
+		for(uint64_t i=1;i<nr_of_nodes;++i){
 
-				//if kmer changes
-				if((kmers[i]>>3) != (prev_kmer>>3)){
+			start_positions_in_[i] += start_positions_in_[i-1];
 
-					//we set to 0 the counters of kmers that contain $
-					count = has_dollars(prev_kmer)?0:count;
-					weights_.push_back(count); //I'm pushing the weight of the previous kmer
+		}
 
-					if(not has_dollars(prev_kmer)){
-						MAX_WEIGHT = count>MAX_WEIGHT?count:MAX_WEIGHT;
-						MEAN_WEIGHT += count;
-					}else{
-						padded_kmers++;
-					}
+		//right-shift start_positions_in_
 
-					count = 1; //start counting weight of this new kmer
+		for(uint64_t i=nr_of_nodes-1; i>0; --i){
 
-					start_positions_out_.push_back(out_labels_.size());
-					out_labels_.push_back(toCHAR(kmers[i] & __uint128_t(7)));//append to BWT first outgoing edge of this new kmer
+			start_positions_in_[i] = start_positions_in_[i-1];
 
-				}else{//same kmer
+		}
 
-					count++;
+		//the $ of the source starts at position 0 in IN
+		start_positions_in_[0]=0;
 
-					uint8_t curr_char = kmers[i] & __uint128_t(7);
-					uint8_t prev_char = prev_kmer & __uint128_t(7);
+		F_ = string();
+		F_.push_back('$');//incoming label of the root
 
-					//if char of outgoing edge has changed
-					if( curr_char != prev_char ){
+		//count number of occurrences of ACGT
+		vector<uint64_t> counts(4,0);
 
-						out_labels_.push_back(toCHAR(curr_char));
+		for(auto c:out_labels_)
+			if(c!='$') counts[toINT(c)]++;
 
-					}
+		for(uint64_t i=0;i<counts[toINT('A')];++i) F_.push_back('A');
+		for(uint64_t i=0;i<counts[toINT('C')];++i) F_.push_back('C');
+		for(uint64_t i=0;i<counts[toINT('G')];++i) F_.push_back('G');
+		for(uint64_t i=0;i<counts[toINT('T')];++i) F_.push_back('T');
+
+		IN_ = vector<uint64_t>(F_.size(),nr_of_nodes);
+
+		assert(start_positions_in_[nr_of_nodes-1] < IN_.size());
+
+		//fill IN_
+
+		for(uint64_t i=0;i<nr_of_nodes;++i){
+
+			uint64_t out_deg = out_degree_(i);
+
+			for(uint8_t off=0;off<out_deg;++off){
+
+				//outgoing label
+				char c = out_labels_[start_positions_out_[i]+off];
+
+				if(c!='$'){
+
+					uint64_t successor = OUT_[start_positions_out_[i]+off];
+					IN_[start_positions_in_[successor]++] = i;
+
 
 				}
 
-				prev_kmer = kmers[i];
-
 			}
 
-			if(not has_dollars(prev_kmer)){
-				MAX_WEIGHT = count>MAX_WEIGHT?count:MAX_WEIGHT;
-				MEAN_WEIGHT += count;
-			}else{
-				padded_kmers++;
-			}
+		}
 
-			weights_.push_back(count);//push back weight of the lasst kmer
+		assert(start_positions_in_[nr_of_nodes-1] == IN_.size());
 
-			nr_of_nodes = start_positions_out_.size();
+		//right-shift start_positions_in_
 
-		    OUT_ = vector<uint64_t>(out_labels_.size());
+		for(uint64_t i=nr_of_nodes-1; i>0; --i){
 
-		    //delete char labeling outgoing edge from each (k+1)-mer, obtaining the k-mers
-		    for(uint64_t i=0;i<kmers.size();++i)
-		    	kmers[i] = kmers[i]>>3;
+			start_positions_in_[i] = start_positions_in_[i-1];
 
-			if(verbose)
-				cout << "Resizing k-mers ..." << endl;
+		}
 
-			//compact kmers by removing duplicates
-		    auto it = unique(kmers.begin(), kmers.end());
-		    kmers.resize(distance(kmers.begin(), it));
-		    //kmers.shrink_to_fit();
-
-		    assert(kmers.size() == nr_of_nodes);
-
-		    start_positions_in_ = vector<uint64_t>(nr_of_nodes,0);
-
-		    for(uint64_t i=0;i<nr_of_nodes;++i){
-
-		    	uint64_t out_deg = out_degree_(i);
-
-		    	for(uint8_t off=0;off<out_deg;++off){
-
-		    		//outgoing label
-		    		char c = out_labels_[start_positions_out_[i]+off];
-
-		    		if(c!='$'){
-
-						__uint128_t succ_kmer = (kmers[i]>>3) | (__uint128_t(toINT(c))<<(3*(k-1)));
-
-						//cout << "----" << kmer_to_str_(kmers[i],k) << " " << c << " " << kmer_to_str_(succ_kmer,k)  << endl;
-
-						auto it = lower_bound(kmers.begin(), kmers.end(), succ_kmer);
-
-						assert(it != kmers.end());//destination kmer must be present
-
-						uint64_t successor = distance(kmers.begin(), it);
-
-						//cout << kmer_to_str_(succ_kmer,k) << " " << kmer_to_str_(kmers[successor],k) << endl;
-						//cout << successor << " / " << nr_of_nodes << endl;
-
-						assert( kmers[successor]==succ_kmer );
-
-						OUT_[start_positions_out_[i]+off] = successor;
-
-						start_positions_in_[successor]++;
-
-		    		}
-
-		    	}
-
-		    }
-
-		    //add one incoming edge (the only one labeled $) to the source
-		    start_positions_in_[0]=1;
-
-		    for(auto x : start_positions_in_){
-		    	assert(x>0); //every node must have >0 incoming edges
-		    }
-
-		    //cumulate in start_positions_in_
-		    for(uint64_t i=1;i<nr_of_nodes;++i){
-
-		    	start_positions_in_[i] += start_positions_in_[i-1];
-
-		    }
-
-		    //right-shift start_positions_in_
-
-		    for(uint64_t i=nr_of_nodes-1; i>0; --i){
-
-				start_positions_in_[i] = start_positions_in_[i-1];
-
-			}
-
-		    //the $ of the source starts at position 0 in IN
-		    start_positions_in_[0]=0;
-
-			F_ = string();
-			F_.push_back('$');//incoming label of the root
-
-			//count number of occurrences of ACGT
-			vector<uint64_t> counts(4,0);
-
-			for(auto c:out_labels_)
-				if(c!='$') counts[toINT(c)]++;
-
-			for(uint64_t i=0;i<counts[toINT('A')];++i) F_.push_back('A');
-			for(uint64_t i=0;i<counts[toINT('C')];++i) F_.push_back('C');
-			for(uint64_t i=0;i<counts[toINT('G')];++i) F_.push_back('G');
-			for(uint64_t i=0;i<counts[toINT('T')];++i) F_.push_back('T');
-
-			IN_ = vector<uint64_t>(F_.size(),nr_of_nodes);
-
-			//fill IN_
-
-		    for(uint64_t i=0;i<nr_of_nodes;++i){
-
-		    	uint64_t out_deg = out_degree_(i);
-
-		    	for(uint8_t off=0;off<out_deg;++off){
-
-		    		//outgoing label
-		    		char c = out_labels_[start_positions_out_[i]+off];
-
-		    		if(c!='$'){
-
-						uint64_t successor = OUT_[start_positions_out_[i]+off];
-						IN_[start_positions_in_[successor++]] = i;
-
-
-		    		}
-
-		    	}
-
-		    }
-
-		    //right-shift start_positions_in_
-
-		    for(uint64_t i=nr_of_nodes-1; i>0; --i){
-
-				start_positions_in_[i] = start_positions_in_[i-1];
-
-			}
-
-		    //the $ of the source starts at position 0 in IN
-		    start_positions_in_[0]=0;
-
-		    exit(0);//TODO munmap_chunk(): invalid pointer
-
-		}//end scope of vector<__uint128_t> kmers;
-
+		//the $ of the source starts at position 0 in IN
+		start_positions_in_[0]=0;
 
 		MEAN_WEIGHT /= (weights_.size()-padded_kmers);
 
@@ -812,7 +837,7 @@ public:
 
 		assert(node<number_of_nodes());
 
-		return node == nr_of_nodes-1 ? nr_of_nodes - start_positions_in_[node] : start_positions_in_[node+1]-start_positions_in_[node];
+		return node == nr_of_nodes-1 ? IN_.size() - start_positions_in_[node] : start_positions_in_[node+1]-start_positions_in_[node];
 
 	}
 
@@ -825,7 +850,7 @@ public:
 
 		assert(node<number_of_nodes());
 
-		return node == nr_of_nodes-1 ? nr_of_nodes - start_positions_out_[node] : start_positions_out_[node+1]-start_positions_out_[node];
+		return node == nr_of_nodes-1 ? OUT_.size() - start_positions_out_[node] : start_positions_out_[node+1]-start_positions_out_[node];
 
 	}
 
@@ -839,16 +864,11 @@ public:
 		if(verbose){
 
 			cout << "Pruning the dBg ... " << endl;
-			cout << "\nStatistics before pruning:" << endl;
-			cout << "Number of distinct kmers " << number_of_distinct_kmers() << endl;
-			cout << "Number of padded kmers " << number_of_padded_kmers() << endl;
-			cout << "Number of nodes (distinct kmers + padded kmers) " << number_of_nodes() << endl;
-			cout << "Number of edges " << number_of_edges() << endl;
-
-			cout << "SPACE BEFORE PRUNING: " << endl;
-			cout << "  de Bruijn graph (BOSS): " << double(dbg_size_in_bits())/number_of_edges() << " bits per edge" << endl;
-			cout << "                          " << double(dbg_size_in_bits())/number_of_nodes() << " bits per node" << endl;
-			cout << "                          " << double(dbg_size_in_bits())/number_of_distinct_kmers() << " bits per distinct kmer" << endl;
+			cout << "Statistics before pruning:" << endl;
+			cout << " Number of distinct kmers " << number_of_distinct_kmers() << endl;
+			cout << " Number of padded kmers " << number_of_padded_kmers() << endl;
+			cout << " Number of nodes (distinct kmers + padded kmers) " << number_of_nodes() << endl;
+			cout << " Number of edges " << number_of_edges() << endl;
 
 		}
 
@@ -867,21 +887,40 @@ public:
 
 			//pairs <node, distance from root>
 			stack<pair<uint64_t, uint8_t> > S;
-			S.push({0,0}); //push the root
+			S.push({0,0}); //push the root (at distance 0)
 
 			while(not S.empty()){
 
 				auto p = S.top();
+				S.pop();
+
 				uint64_t n = p.first;
 				uint8_t d = p.second;
 
-				S.pop();
+				assert(d<k);
 
 				padded[n] = true;
 
-				for(uint8_t i = 0; i < out_degree_(n) && d<k-1 && out_label_(n,i) != '$' ;++i){
+				for(uint8_t i = 0; i < out_degree_(n) && d<k-1 ;++i){
 
-					S.push({move_forward_by_rank_(n,i),d+1});
+					if(out_label_(n,i) != '$'){
+
+						S.push({move_forward_by_rank_(n,i),d+1});
+
+						//TODO
+						cout << move_forward_by_rank_(n,i) << " " << int(in_degree_(move_forward_by_rank_(n,i))) << endl;
+
+						if(move_forward_by_rank_(n,i)==1){
+
+							auto xx = 1;
+							cout << IN_[start_positions_in_[xx]] << " and " << IN_[start_positions_in_[xx]] << endl;
+
+						}
+
+						assert(in_degree_(move_forward_by_rank_(n,i))==1);
+						assert(move_backward_(move_forward_by_rank_(n,i),0) == n);
+
+					}
 
 				}
 
@@ -889,30 +928,40 @@ public:
 
 		}
 
+		//check on padded nodes
+		/*
+		for(uint64_t n = 0; n<number_of_nodes();++n){
+
+			if(padded[n] and n>0){
+
+				assert(in_degree_(n)==1);
+				assert(padded[move_backward_(n,0)]);
+
+			}
+
+		}*/
+
 		//now, for each non-padded kmer X that is preceded only by a padded kmer (i.e. a source of the dBg),
 		//mark as necessary all padded kmers that lead from the root to X
-
-		necessary_node[0] = true;
 
 		for(uint64_t n = 0; n<number_of_nodes();++n){
 
 			if(not padded[n]){
 
-				//cout << "necessary non-padded node: " << n << endl;
 				necessary_node[n] = true;
 
 			}
 
 			uint64_t node;
-			if(not padded[n] && in_degree_(n)==1 && padded[node = move_backward_(n,0)]){
+			if(not padded[n] && n>0 && in_degree_(n)==1 && padded[node = move_backward_(n,0)]){
 
 				while(node != 0){
 
 					//cout << "necessary padded node: " << node << endl;
 
+					assert(in_degree_(node) == 1); //all padded nodes have in-degree 1
 					assert(padded[node]);
 					necessary_node[node] = true;
-					assert(in_degree_(node) == 1); //all padded nodes have in-degree 1
 					node = move_backward_(node,0);
 
 				}
