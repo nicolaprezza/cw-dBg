@@ -396,13 +396,14 @@ public:
 		for(auto & k : kmers)
 			k = k>>3;
 
-		if(verbose)
-			cout << "Resizing k-mers ..." << endl;
+		//if(verbose)
+			//cout << "Resizing k-mers ..." << endl;
 
 		//compact kmers by removing duplicates
 		auto it = unique(kmers.begin(), kmers.end());
-		kmers.resize(distance(kmers.begin(), it));
-		//kmers.shrink_to_fit();
+		auto new_size = distance(kmers.begin(), it);
+		kmers.resize(new_size);
+		kmers.shrink_to_fit();
 
 		assert(kmers.size() == nr_of_nodes);
 
@@ -451,9 +452,8 @@ public:
 
 		}
 
-		//for some reason this throws a munmap_chunk(): invalid pointer at the end of the scope ...
-		//kmers.clear();
-		//kmers.shrink_to_fit();
+		kmers.clear();
+		kmers.shrink_to_fit();
 
 		assert(start_positions_in_[0]==0);
 
@@ -489,21 +489,30 @@ public:
 		//the $ of the source starts at position 0 in IN
 		start_positions_in_[0]=0;
 
-		//count number of occurrences of ACGT
-		vector<uint64_t> counts(4,0);
+		C = vector<uint64_t>(5);
 
-		for(auto c:out_labels_)
-			if(c!='$') counts[toINT(c)]++;
+		uint64_t F_length = 1;
 
-		F_ = string(1+counts[toINT('A')]+counts[toINT('C')]+counts[toINT('G')]+counts[toINT('T')],'$');
+		for(auto c : out_labels_){
 
-		uint64_t idx = 1;
-		for(uint64_t i=0;i<counts[toINT('A')];++i) F_[idx++]='A';
-		for(uint64_t i=0;i<counts[toINT('C')];++i) F_[idx++]='C';
-		for(uint64_t i=0;i<counts[toINT('G')];++i) F_[idx++]='G';
-		for(uint64_t i=0;i<counts[toINT('T')];++i) F_[idx++]='T';
+			C[toINT(c)]++;
+			F_length += c!='$';
 
-		IN_ = vector<uint64_t>(F_.size(),nr_of_nodes);
+		}
+
+		C[0] = 1;//there is one $ in the F column (it's the only incoming edge of the root kmer $$$)
+		C[1] += C[0];
+		C[2] += C[1];
+		C[3] += C[2];
+		C[4] += C[3];
+
+		C[4] = C[3];
+		C[3] = C[2];
+		C[2] = C[1];
+		C[1] = C[0];
+		C[0] = 0; //$ starts at position 0 in the F column
+
+		IN_ = vector<uint64_t>(F_length,nr_of_nodes);
 
 		assert(start_positions_in_[nr_of_nodes-1] < IN_.size());
 
@@ -548,26 +557,8 @@ public:
 
 		MEAN_WEIGHT /= (weights_.size()-padded_kmers);
 
-
-		/*
-		C = vector<uint64_t>(5);
-
-		for(auto c : out_labels_) C[toINT(c)]++;
-
-		C[0] = 1;//there is one $ in the F column (it's the only incoming edge of the root kmer $$$)
-		C[1] += C[0];
-		C[2] += C[1];
-		C[3] += C[2];
-		C[4] += C[3];
-
-		C[4] = C[3];
-		C[3] = C[2];
-		C[2] = C[1];
-		C[1] = C[0];
-		C[0] = 0; //$ starts at position 0 in the F column
-*/
-
-		if(not do_not_optimize)	prune(verbose);
+		if(not do_not_optimize)
+			prune(verbose);
 
 		//compute MST
 
@@ -963,8 +954,6 @@ public:
 		{
 
 			string new_out_labels;
-			vector<uint64_t> new_IN;
-			vector<uint64_t> new_OUT;
 			vector<uint64_t> new_start_positions_in; //for each node, its starting position in IN_
 			vector<uint64_t> new_start_positions_out; //for each node, its starting position in OUT_ and out_labels_
 
@@ -1042,11 +1031,7 @@ public:
 
 			}
 
-			//TODO compute new_IN, new_OUT
-
 			out_labels_ = new_out_labels;
-			IN_ = new_IN;
-			OUT_ = new_OUT;
 			start_positions_in_ = new_start_positions_in; //for each node, its starting position in IN_
 			start_positions_out_ = new_start_positions_out; //for each node, its starting position in OUT_ and out_labels_
 
@@ -1056,28 +1041,84 @@ public:
 
 		}
 
-		//overwirte F_
+		//overwrite C
 
-		//count number of occurrences of ACGT
-		vector<uint64_t> counts(4,0);
+		C = vector<uint64_t>(5,0);
 
-		for(auto c:out_labels_)
-			if(c!='$') counts[toINT(c)]++;
+		uint64_t F_length = 1;
 
-		F_ = string(1+counts[toINT('A')]+counts[toINT('C')]+counts[toINT('G')]+counts[toINT('T')],'$');
+		for(auto c : out_labels_){
 
-		uint64_t idx = 1;
-		for(uint64_t i=0;i<counts[toINT('A')];++i) F_[idx++]='A';
-		for(uint64_t i=0;i<counts[toINT('C')];++i) F_[idx++]='C';
-		for(uint64_t i=0;i<counts[toINT('G')];++i) F_[idx++]='G';
-		for(uint64_t i=0;i<counts[toINT('T')];++i) F_[idx++]='T';
+			C[toINT(c)]++;
+			F_length += c!='$';
 
-		assert(F_.size() == IN_.size());
-		assert(OUT_.size() == out_labels_.size());
+		}
+
+		C[0] = 1;//there is one $ in the F column (it's the only incoming edge of the root kmer $$$)
+		C[1] += C[0];
+		C[2] += C[1];
+		C[3] += C[2];
+		C[4] += C[3];
+
+		C[4] = C[3];
+		C[3] = C[2];
+		C[2] = C[1];
+		C[1] = C[0];
+		C[0] = 0; //$ starts at position 0 in the F column
+
+		IN_ = vector<uint64_t>(F_length);
+		IN_[0] = nr_of_nodes;
+		OUT_ = vector<uint64_t>(out_labels_.size(),nr_of_nodes);
+
+		//now fill IN_ and OUT_
+
+		//current node in IN_, for each letter
+		vector<uint64_t> curr_node_in(5);
+
+		for(auto c : {'A','C','G','T'}){
+
+			curr_node_in[toINT(c)] = distance(start_positions_in_.begin(),lower_bound(start_positions_in_.begin(),start_positions_in_.end(),C[toINT(c)]));
+			assert(start_positions_in_[curr_node_in[toINT(c)]] == C[toINT(c)]);
+
+		}
+
+		uint64_t curr_node_out = 0;
+
+		vector<uint64_t> curr_pos_in(5);
+
+		for(auto c : {'A','C','G','T'}){
+
+			curr_pos_in[toINT(c)] = C[toINT(c)];
+
+		}
+
+		for(uint64_t curr_pos_out=0;curr_pos_out<out_labels_.size();++curr_pos_out){
+
+			//update curr_node_out if we reach the position of the next node
+			if(curr_node_out < nr_of_nodes-1 && curr_pos_out == start_positions_out_[curr_node_out+1]) curr_node_out++;
+
+			char c  = out_labels_[curr_pos_out];
+
+			if(c != '$'){
+
+				//update curr_node_in if we reach the position of the next node
+				if(curr_node_in[toINT(c)] < nr_of_nodes-1 && curr_pos_in[toINT(c)] == start_positions_in_[curr_node_in[toINT(c)]+1]) curr_node_in[toINT(c)]++;
+
+				OUT_[curr_pos_out] = curr_node_in[toINT(c)];
+
+				assert(curr_pos_in[toINT(c)] != 0);
+				IN_[curr_pos_in[toINT(c)]] = curr_node_out;
+
+				curr_pos_in[toINT(c)]++;
+
+			}
+
+		}
+
 
 		//prune weights
 
-		idx=0;
+		uint64_t idx=0;
 
 		for(uint64_t i=0;i<weights_.size();++i)
 			if(necessary_node[i]) weights_[idx++] = weights_[i];
@@ -1428,7 +1469,6 @@ private:
 
 	//labels of outgoing edges. Corresponds to the BWT, except that there can be unnecessary $ here (will be removed in BWT)
 	string out_labels_;
-	string F_; //labels of incoming edges
 	vector<uint64_t> OUT_; //outgoing edges
 	vector<uint64_t> IN_; //incoming edges
 
