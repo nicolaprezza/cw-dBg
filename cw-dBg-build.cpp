@@ -134,11 +134,11 @@ int main(int argc, char** argv){
 	cout << "\nDone. Build time (hh:mm:ss): " << elapsed/3600 << ":" << (elapsed%3600)/60 << ":" << (elapsed%3600)%60 << endl;
 
 	cout << "Number of distinct kmers " << cwdbg.number_of_distinct_kmers() << endl;
-	cout << "Number of padded kmers " << cwdbg.number_of_padded_kmers() << endl;
-	cout << "Number of nodes (distinct kmers + padded kmers) " << cwdbg.number_of_nodes() << endl;
+	cout << "Number of dummy kmers " << cwdbg.number_of_padded_kmers() << endl;
+	cout << "Number of nodes (original kmers + dummy kmers) " << cwdbg.number_of_nodes() << endl;
 	cout << "Number of edges " << cwdbg.number_of_edges() << endl;
 	cout << "Max abundance " << cwdbg.max_weight() << endl;
-	cout << "Mean abundance (only on distinct kmers) " << cwdbg.mean_weight() << endl;
+	cout << "Mean abundance (only on original kmers) " << cwdbg.mean_weight() << endl;
 
 	/*
 	cout << "SPACE: " << endl;
@@ -155,6 +155,7 @@ int main(int argc, char** argv){
 
 	string out_index = input_file + ".cwdbg";
 
+	cout << "Storing data structure to " << out_index << endl;
 	cwdbg.save_to_file(out_index);
 
 	cout << "SPACE: " << endl;

@@ -160,7 +160,7 @@ public:
 
 		}
 
-		prefixes = bit_vector(pref_size,0);
+		bit_vector prefixes_bv(pref_size,0);
 		codes = bit_vector(codes_size,0);
 
 		uint64_t i_pref=0;
@@ -174,9 +174,9 @@ public:
 			assert(n_b>0);
 
 			for(uint8_t j=0;j<n_b-1;++j)
-				prefixes[i_pref++] = 0;
+				prefixes_bv[i_pref++] = 0;
 
-			prefixes[i_pref++] = 1;
+			prefixes_bv[i_pref++] = 1;
 
 			for(uint8_t j=0;j<n_b-1;++j){
 				codes[i_codes++] = w & uint64_t(1);
@@ -185,10 +185,11 @@ public:
 
 		}
 
-		assert(i_pref == prefixes.size());
+		assert(i_pref == prefixes_bv.size());
 		assert(i_codes == codes.size());
 
-		prefixes_sel = bit_vector::select_1_type(&prefixes);
+		prefixes = rrr_vector<>(prefixes_bv);
+		prefixes_sel = rrr_vector<>::select_1_type(&prefixes);
 
 	}
 
@@ -240,8 +241,8 @@ public:
 private:
 
 	uint64_t size_ = 0;
-	bit_vector prefixes;
-	bit_vector::select_1_type prefixes_sel;
+	rrr_vector<> prefixes;
+	rrr_vector<>::select_1_type prefixes_sel;
 	bit_vector codes;
 
 };
