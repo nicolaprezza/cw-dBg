@@ -1691,60 +1691,70 @@ private:
 		//rrr_vector<> sampled;
 		//rrr_vector<>::rank_1_type sampled_rank;
 
-		sampled_ = bit_vector(nr_of_nodes,false);
+		//nodes in post-order
+		vector<uint64_t> post_order(nr_of_nodes);
+		int64_t idx = nr_of_nodes-1;
 
-		//post-order visit of the MST
-		queue<uint64_t> nodes;
+		{
 
-		//size of each component of the tree decomposition
-		//at the beginning, each component contains just the node itself.
-		vector<uint32_t> component_size(nr_of_nodes,1);
+			stack<uint64_t> nodes;
 
-		//first insert all leaves
-		for(uint64_t i = 0;i<number_of_nodes();++i){
+			//push all MST roots in the stack
+			for(uint64_t i=0;i<nr_of_nodes;++i)
+				if(is_root_in_mst_(i))
+					nodes.push(i);
 
-			if(is_leaf_(i))
-				nodes.push(i);
+			while(not nodes.empty()){
 
-		}
+				auto n = nodes.top();
+				nodes.pop();
 
-		while(not nodes.empty()){
+				assert(idx < nr_of_nodes);
+				assert(idx >= 0);
+				post_order[idx--] = n;
 
-			auto n = nodes.front();
-			nodes.pop();
+				for(uint8_t k = 0; k < out_degree_(n);++k){
 
-			auto out_deg = out_degree_(n);
+					uint64_t child_pos = start_positions_out_[n]+k;
 
-			uint16_t sum_of_component_sizes = 1;
-
-			for(uint8_t k=0;k<out_deg;++k){
-
-				uint64_t pos = start_positions_out_[n] + k;
-
-				//for each MST edge leaving n that does not lead to a completed subtree
-				if(mst_out_edges_[pos] and not sampled_[OUT_[pos]]){
-
-					sum_of_component_sizes += component_size[move_forward_by_rank_(n,k)];
-
-				}
-
-				if(sum_of_component_sizes < srate){
-
-					component_size[n] = sum_of_component_sizes;
-
-				}else{
-
-					//component_size[n] = sum_of_component_sizes;
-					sampled_[n] = 1;
+					if(mst_out_edges_[child_pos])
+						nodes.push(OUT_[child_pos]);
 
 				}
 
 			}
 
-			if(not is_root_in_mst_(n))
-				nodes.push(parent_in_mst_[n]);
-			else
+			assert(idx==-1);
+
+		}
+
+		sampled_ = bit_vector(nr_of_nodes,false);
+
+		//size of each component of the tree decomposition
+		//at the beginning, each component contains just the node itself.
+		vector<uint64_t> component_size(nr_of_nodes,1);
+
+		for(uint64_t i=0;i<nr_of_nodes;++i){
+
+			auto n = post_order[i];
+
+			if(is_root_in_mst_(n)){
+
 				sampled_[n] = 1;//roots are always sampled
+
+			}else{
+
+				if(component_size[n] < srate){
+
+					component_size[parent_in_mst_[n]] += component_size[n];
+
+				}else{
+
+					sampled_[n] = 1;
+
+				}
+
+			}
 
 		}
 
