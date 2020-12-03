@@ -109,15 +109,27 @@ int main(int argc, char** argv){
 
 
 	/*string km;
-	km = "CGA";	cout << km << " " << cwdbg.find_kmer(km) << " " << cwdbg[km] << endl;
-	km = "GAC";	cout << km << " " << cwdbg.find_kmer(km) << " " << cwdbg[km] << endl;
-	km = "TAC";	cout << km << " " << cwdbg.find_kmer(km) << " " << cwdbg[km] << endl;
-	km = "GTC";	cout << km << " " << cwdbg.find_kmer(km) << " " << cwdbg[km] << endl;
-	km = "ACG";	cout << km << " " << cwdbg.find_kmer(km) << " " << cwdbg[km] << endl;
-	km = "TCG";	cout << km << " " << cwdbg.find_kmer(km) << " " << cwdbg[km] << endl;
-	km = "ACT";	cout << km << " " << cwdbg.find_kmer(km) << " " << cwdbg[km] << endl;
-	km = "CGT";	cout << km << " " << cwdbg.find_kmer(km) << " " << cwdbg[km] << endl;
-	km = "AAA";	cout << km << " " << cwdbg.find_kmer(km) << " " << cwdbg[km] << endl;*/
+
+	km = "CGA";	cout << km << " " << cwdbg.find_kmer(km) << endl;
+	km = "GAC";	cout << km << " " << cwdbg.find_kmer(km) << endl;
+	km = "TAC";	cout << km << " " << cwdbg.find_kmer(km) << endl;
+	km = "GTC";	cout << km << " " << cwdbg.find_kmer(km) << endl;
+	km = "ACG";	cout << km << " " << cwdbg.find_kmer(km) << endl;
+	km = "TCG";	cout << km << " " << cwdbg.find_kmer(km) << endl;
+	km = "ACT";	cout << km << " " << cwdbg.find_kmer(km) << endl;
+	km = "CGT";	cout << km << " " << cwdbg.find_kmer(km) << endl;
+	km = "AAA";	cout << km << " " << cwdbg.find_kmer(km) << endl<<endl;
+
+
+	km = "CGA";	cout << km << " " << cwdbg[km] << endl;
+	km = "GAC";	cout << km << " " << cwdbg[km] << endl;
+	km = "TAC";	cout << km << " " << cwdbg[km] << endl;
+	km = "GTC";	cout << km << " " << cwdbg[km] << endl;
+	km = "ACG";	cout << km << " " << cwdbg[km] << endl;
+	km = "TCG";	cout << km << " " << cwdbg[km] << endl;
+	km = "ACT";	cout << km << " " << cwdbg[km] << endl;
+	km = "CGT";	cout << km << " " << cwdbg[km] << endl;
+	km = "AAA";	cout << km << " " << cwdbg[km] << endl;*/
 
 	//for(int i=0;i<11;++i) cout << i << " " << int(cwdbg.in_degree(i)) << " " << int(cwdbg.out_degree(i)) << endl;
 

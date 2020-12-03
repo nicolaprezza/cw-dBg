@@ -75,7 +75,7 @@ uint64_t int_to_positive(int w){
 //reverse of the above
 int positive_to_int(uint64_t x){
 
-	return x%2 ? x/2 : -((int(x)+1)/2);
+	return x%2 ? -((int(x)+1)/2) : x/2;
 
 }
 
@@ -333,9 +333,9 @@ template	<	class bitv_type = rrr_vector<>,
 				//class str_type = wt_huff<>
 				//class cint_vector = dac_vector_dp<rrr_vector<> >
 				//class cint_vector = dac_vector<>
-				//class cint_vector = vlc_vector<coder::elias_gamma>
+				class cint_vector = vlc_vector<coder::elias_gamma>
 				//class cint_vector = vlc_vector<coder::elias_delta>
-				class cint_vector = gamma_vector
+				//class cint_vector = gamma_vector
 			>
 class cw_dBg{
 
@@ -717,7 +717,7 @@ public:
 		macro_tree_decomposition(verbose);
 
 		if(verbose)
-			cout << "Compressing all data structures ... " << endl;
+			cout << "Compressing the data structures ... " << endl;
 
 		compress_structures();
 
@@ -931,15 +931,16 @@ public:
 		if(n==number_of_nodes()) return 0;
 
 		//cumulate deltas on the path from n to its nearest sampled ancestor
-		int64_t cumulated_deltas = 0;
+		int cumulated_deltas = 0;
 
 		while(not sampled[n]){
+
+			assert(n<deltas.size());
 
 			cumulated_deltas -= positive_to_int(deltas[n]);
 			n = mst_parent(n);
 
 		}
-
 		assert(sampled[n]);
 
 		auto sum = int64_t(samples[sampled_rank(n)]) + cumulated_deltas;
@@ -976,9 +977,11 @@ private:
 	 */
 	uint64_t mst_parent(uint64_t n){
 
-		assert(not is_root_in_mst(n));
+		if(is_root_in_mst(n)) return nr_of_nodes;
 
 		auto in_deg = in_degree(n);
+
+		assert(n>0);
 
 		uint64_t first_pos = n==0?0:IN_sel(n)+1;
 		uint64_t last_pos = first_pos+in_deg-1;
@@ -988,7 +991,10 @@ private:
 
 		while(not mst[first_pos] and first_pos <= last_pos) first_pos++;
 
+		assert(mst[first_pos]);
+
 		assert(first_pos <= last_pos);
+		assert(toCHAR(F_int(first_pos))!='$');
 
 		return OUT_rank(FL(first_pos));
 
@@ -1872,7 +1878,7 @@ private:
 
 				for(uint8_t off = 0; off < in_deg; ++off){
 
-					if(parent_in_mst_[n] == IN_[start_positions_in_[n]+off]){
+					if(parent_in_mst_[n] != nr_of_nodes and parent_in_mst_[n] == IN_[start_positions_in_[n]+off]){
 
 						mst_bv[idx++] = 1;
 
