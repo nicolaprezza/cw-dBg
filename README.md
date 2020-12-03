@@ -4,9 +4,9 @@ Author: Nicola Prezza. Joint work with Giuseppe Italiano, Blerina Sinaimeri, Ros
 
 ### Description
 
-**Warning: experimental code. Runs only on small files (dBg construction is not yet optimized)**
+**Warning: experimental code. Runs only on small files. dBg construction is not yet optimized and requires 22 Bytes per input base (in RAM) at the moment**
 
-This library builds a compressed representation of the weighted de Bruijn graph. The underlying graph topology is stored using the BOSS representation, while the weights are differentially encoded and sampled on a spanning tree of the graph. Typically, in a 30x-covered dataset the weights are squeezed down to about 3 bits per distinct k-mer. On top of this, the BOSS representation takes about 4 bits per distinct k-mer.
+This library builds a compressed representation of the weighted de Bruijn graph. The underlying graph topology is stored using the BOSS representation, while the weights are differentially encoded and sampled on a spanning tree of the graph chosen to minimize the total bit-size of the structure. Results show that on a 17x-covered dataset with 22M distinct kmers the whole structure takes about 6 bits per kmer.
 
 ### Download
 

@@ -107,16 +107,17 @@ int main(int argc, char** argv){
 	//cw_dBg<bit_vector, wt_huff<> > cwdbg(input_file, format, nlines, k, srate, true); //fast - uses uncompressed vectors
 	cw_dBg<> cwdbg(input_file, format, nlines, k, srate, do_not_optimize, true); //slow but very small - uses rrr-compressed bit-vectors everywhere
 
+
 	/*string km;
-	km = "CGA";	cout << km << " " << cwdbg.find_kmer(km) << " " << cwdbg.abundance(km) << endl;
-	km = "GAC";	cout << km << " " << cwdbg.find_kmer(km) << " " << cwdbg.abundance(km) << endl;
-	km = "TAC";	cout << km << " " << cwdbg.find_kmer(km) << " " << cwdbg.abundance(km) << endl;
-	km = "GTC";	cout << km << " " << cwdbg.find_kmer(km) << " " << cwdbg.abundance(km) << endl;
-	km = "ACG";	cout << km << " " << cwdbg.find_kmer(km) << " " << cwdbg.abundance(km) << endl;
-	km = "TCG";	cout << km << " " << cwdbg.find_kmer(km) << " " << cwdbg.abundance(km) << endl;
-	km = "ACT";	cout << km << " " << cwdbg.find_kmer(km) << " " << cwdbg.abundance(km) << endl;
-	km = "CGT";	cout << km << " " << cwdbg.find_kmer(km) << " " << cwdbg.abundance(km) << endl;
-	km = "AAA";	cout << km << " " << cwdbg.find_kmer(km) << " " << cwdbg.abundance(km) << endl;*/
+	km = "CGA";	cout << km << " " << cwdbg.find_kmer(km) << " " << cwdbg[km] << endl;
+	km = "GAC";	cout << km << " " << cwdbg.find_kmer(km) << " " << cwdbg[km] << endl;
+	km = "TAC";	cout << km << " " << cwdbg.find_kmer(km) << " " << cwdbg[km] << endl;
+	km = "GTC";	cout << km << " " << cwdbg.find_kmer(km) << " " << cwdbg[km] << endl;
+	km = "ACG";	cout << km << " " << cwdbg.find_kmer(km) << " " << cwdbg[km] << endl;
+	km = "TCG";	cout << km << " " << cwdbg.find_kmer(km) << " " << cwdbg[km] << endl;
+	km = "ACT";	cout << km << " " << cwdbg.find_kmer(km) << " " << cwdbg[km] << endl;
+	km = "CGT";	cout << km << " " << cwdbg.find_kmer(km) << " " << cwdbg[km] << endl;
+	km = "AAA";	cout << km << " " << cwdbg.find_kmer(km) << " " << cwdbg[km] << endl;*/
 
 	//for(int i=0;i<11;++i) cout << i << " " << int(cwdbg.in_degree(i)) << " " << int(cwdbg.out_degree(i)) << endl;
 
@@ -139,6 +140,7 @@ int main(int argc, char** argv){
 	cout << "Max abundance " << cwdbg.max_weight() << endl;
 	cout << "Mean abundance (only on distinct kmers) " << cwdbg.mean_weight() << endl;
 
+	/*
 	cout << "SPACE: " << endl;
 	cout << "  de Bruijn graph (BOSS): " << double(cwdbg.dbg_size_in_bits())/cwdbg.number_of_edges() << " bits per edge" << endl;
 	cout << "                          " << double(cwdbg.dbg_size_in_bits())/cwdbg.number_of_nodes() << " bits per node" << endl;
@@ -149,8 +151,16 @@ int main(int argc, char** argv){
 	cout << "  total:                  " << double(cwdbg.size_in_bits())/cwdbg.number_of_edges() << " bits per edge" << endl;
 	cout << "                          " << double(cwdbg.size_in_bits())/cwdbg.number_of_nodes() << " bits per node" << endl;
 	cout << "                          " << double(cwdbg.size_in_bits())/cwdbg.number_of_distinct_kmers() << " bits per distinct kmer" << endl<<endl;
+	 */
 
+	string out_index = input_file + ".cwdbg";
 
+	cwdbg.save_to_file(out_index);
 
+	cout << "SPACE: " << endl;
+	cout << "  de Bruijn graph (BOSS): " << double(cwdbg.dbg_size_in_bits())/cwdbg.number_of_distinct_kmers() << " bits per kmer" << endl;
+	cout << "  compressed deltas: " << double(cwdbg.deltas_size_in_bits())/cwdbg.number_of_distinct_kmers() << " bits per kmer" << endl;
+	cout << "  MST and samples: " << double(cwdbg.mst_size_in_bits())/cwdbg.number_of_distinct_kmers() << " bits per kmer" << endl;
+	cout << "  total: " << double(cwdbg.size_in_bits())/cwdbg.number_of_distinct_kmers() << " bits per kmer" << endl<<endl;
 
 }

@@ -62,17 +62,28 @@ char toCHAR(uint8_t x){
 
 }
 
+/*
+ * encode small integers as small positive integers (negative -> odd, positive -> even)
+ * output: integer >= 0
+ */
 uint64_t int_to_positive(int w){
 
-	//encode small integers as small positive integers (negative -> odd, positive -> even)
 	return w<0?2*(-w)-1:2*w;
 
 }
 
-//number of bits of x
+//reverse of the above
+int positive_to_int(uint64_t x){
+
+	return x%2 ? x/2 : -((int(x)+1)/2);
+
+}
+
+//number of bits of x>=1
 uint64_t n_bits(uint64_t x){
 
-	 return 64 - __builtin_clzll(x);
+	assert(x>=1);
+	return 64 - __builtin_clzll(x);
 
 }
 
@@ -81,6 +92,17 @@ uint64_t cost_gamma(uint64_t w){
 
 	assert(w>=1);
 	return 2*n_bits(w)-1;
+
+}
+
+//gamma-encoding length of vector of integers >= 0
+uint64_t cost_gamma(vector<uint64_t>& V){
+
+	uint64_t cost = 0;
+
+	for(auto w : V) cost += cost_gamma(w+1);
+
+	return cost;
 
 }
 
@@ -111,6 +133,118 @@ uint64_t cost_of_weight(int w){
 	return cost_of_int(int_to_positive(w));
 
 }
+
+/*
+ * vectors of integers >= 0 compressed with Elias Gamma and with fast random access.
+ */
+class gamma_vector{
+
+public:
+
+	gamma_vector(){}
+
+	gamma_vector(vector<uint64_t> & V){
+
+		size_ = V.size();
+
+		uint64_t pref_size = 0;
+		uint64_t codes_size = 0;
+
+		for(uint64_t w : V){
+
+			auto n_b = n_bits(w+1);
+			assert(n_b>0);
+
+			pref_size += n_b;
+			codes_size += (n_b-1);
+
+		}
+
+		prefixes = bit_vector(pref_size,0);
+		codes = bit_vector(codes_size,0);
+
+		uint64_t i_pref=0;
+		uint64_t i_codes=0;
+
+		for(uint64_t w : V){
+
+			w++;
+
+			auto n_b = n_bits(w);
+			assert(n_b>0);
+
+			for(uint8_t j=0;j<n_b-1;++j)
+				prefixes[i_pref++] = 0;
+
+			prefixes[i_pref++] = 1;
+
+			for(uint8_t j=0;j<n_b-1;++j){
+				codes[i_codes++] = w & uint64_t(1);
+				w = w>>1;
+			}
+
+		}
+
+		assert(i_pref == prefixes.size());
+		assert(i_codes == codes.size());
+
+		prefixes_sel = bit_vector::select_1_type(&prefixes);
+
+	}
+
+	uint64_t size(){
+		return size_;
+	}
+
+	uint64_t operator[](uint64_t i){
+
+		assert(i<size());
+
+		assert(i==0 or (i>0 and i<=size()));
+		assert(i+1<=size());
+
+
+		uint64_t start = i==0?0:(prefixes_sel(i)+1-i);//included
+		uint64_t end = prefixes_sel(i+1) - i;//excluded
+
+		uint64_t n_b = end-start;
+
+		uint64_t x = 1;
+
+		for(uint64_t k=0; k<n_b; ++k){
+
+			x = (x<<1) | codes[end-k-1];
+
+		}
+
+		assert(x>0);
+
+		return x-1;
+	}
+
+	uint64_t serialize(ostream& out){
+
+		uint64_t written_bytes = 0;//total size in bytes
+
+		out.write((char*)&size_,sizeof(size_));
+		written_bytes += sizeof(size_);
+
+		written_bytes += prefixes.serialize(out);
+		written_bytes += prefixes_sel.serialize(out);
+		written_bytes += codes.serialize(out);
+
+		return written_bytes;
+
+	}
+
+private:
+
+	uint64_t size_ = 0;
+	bit_vector prefixes;
+	bit_vector::select_1_type prefixes_sel;
+	bit_vector codes;
+
+};
 
 template<class dbg_type>
 class comp_edge{
@@ -196,10 +330,11 @@ template	<	class bitv_type = rrr_vector<>,
 				//class bitv_type = bit_vector<>,
 				class str_type = wt_huff<rrr_vector<> >,
 				//class str_type = wt_huff<>
-				class cint_vector = dac_vector_dp<rrr_vector<> >
+				//class cint_vector = dac_vector_dp<rrr_vector<> >
 				//class cint_vector = dac_vector<>
 				//class cint_vector = vlc_vector<coder::elias_gamma>
 				//class cint_vector = vlc_vector<coder::elias_delta>
+				class cint_vector = gamma_vector
 			>
 class cw_dBg{
 
@@ -589,32 +724,95 @@ public:
 	}
 
 	/*
-	 * size of the de Bruijn graph
+	 * save the structure to the path specified.
 	 */
-	uint64_t dbg_size_in_bits(){
+	void save_to_file(string path){
 
-		return	8*((size_in_mega_bytes(BWT) +
-				size_in_mega_bytes(IN) +
-				size_in_mega_bytes(IN_rank) +
-				size_in_mega_bytes(IN_sel) +
-				size_in_mega_bytes(OUT) +
-				size_in_mega_bytes(OUT_rank) +
-				size_in_mega_bytes(OUT_sel))*(uint64_t(1)<<20) +
-				C.capacity() * 8);
+		std::ofstream out(path);
+		serialize(out);
+		out.close();
+
+	}
+
+
+	uint64_t serialize(ostream& out){
+
+		DBG_SIZE = 0;//size in bytes of the dBg
+		DELTAS_SIZE = 0;//size in bytes of the deltas
+		MST_SIZE = 0;//size in bytes of the MST + samples
+
+		uint64_t written_bytes = 0;//total size in bytes
+
+		out.write((char*)&k,sizeof(k));
+		DBG_SIZE += sizeof(k);
+
+		out.write((char*)&srate,sizeof(srate));
+		DBG_SIZE += sizeof(srate);
+
+		out.write((char*)&nr_of_nodes,sizeof(nr_of_nodes));
+		DBG_SIZE += sizeof(nr_of_nodes);
+
+		out.write((char*)&MAX_WEIGHT,sizeof(MAX_WEIGHT));
+		DBG_SIZE += sizeof(MAX_WEIGHT);
+
+		out.write((char*)&MEAN_WEIGHT,sizeof(MEAN_WEIGHT));
+		DBG_SIZE += sizeof(MEAN_WEIGHT);
+
+		out.write((char*)&padded_kmers,sizeof(padded_kmers));
+		DBG_SIZE += sizeof(padded_kmers);
+
+		DBG_SIZE += BWT.serialize(out);
+		DBG_SIZE += IN.serialize(out);
+		DBG_SIZE += IN_rank.serialize(out);
+		DBG_SIZE += IN_sel.serialize(out);
+		DBG_SIZE += OUT.serialize(out);
+		DBG_SIZE += OUT_rank.serialize(out);
+		DBG_SIZE += OUT_sel.serialize(out);
+		out.write((char*)C.data(),C.size()*sizeof(uint64_t));
+		DBG_SIZE += C.size()*sizeof(uint64_t);
+
+		written_bytes += DBG_SIZE;
+
+		DELTAS_SIZE += deltas.serialize(out);
+
+		written_bytes += DELTAS_SIZE;
+
+		MST_SIZE += mst.serialize(out);
+		MST_SIZE += mst_rank.serialize(out);
+		MST_SIZE += sampled.serialize(out);
+		MST_SIZE += sampled_rank.serialize(out);
+		MST_SIZE += samples.serialize(out);
+
+		written_bytes += MST_SIZE;
+
+		return written_bytes;
 
 	}
 
 	/*
-	 * size (Bytes) of the compressed weights
+	 * size of the de Bruijn graph
 	 */
-	uint64_t weights_size_in_bits(){
+	uint64_t dbg_size_in_bits(){
 
-		return	8*((size_in_mega_bytes(deltas) +
-				size_in_mega_bytes(mst) +
-				size_in_mega_bytes(mst_rank) +
-				size_in_mega_bytes(sampled) +
-				size_in_mega_bytes(sampled_rank) +
-				size_in_mega_bytes(samples))*(uint64_t(1)<<20));
+		return	DBG_SIZE*8;
+
+	}
+
+	/*
+	 * size (bits) of just the compressed deltas
+	 */
+	uint64_t deltas_size_in_bits(){
+
+		return	DELTAS_SIZE*8;
+
+	}
+
+	/*
+	 * size (bits) of the MST topology and samples
+	 */
+	uint64_t mst_size_in_bits(){
+
+		return	MST_SIZE*8;
 
 	}
 
@@ -623,7 +821,7 @@ public:
 	 */
 	uint64_t size_in_bits(){
 
-		return dbg_size_in_bits() + weights_size_in_bits();
+		return dbg_size_in_bits() + deltas_size_in_bits() + mst_size_in_bits();
 
 	}
 
@@ -708,12 +906,126 @@ public:
 
 	}
 
-	uint32_t abundance(string& kmer){
+	/*
+	 * input: kmer
+	 * output: abundance
+	 */
+	uint64_t operator[](string& kmer){
 
-		auto idx = find_kmer(kmer);
+		return abundance(kmer);
 
-		return idx == number_of_nodes()?0:weights_[idx]; //TODO: use the compressed weights once 'weights' has been freed
+	}
 
+	/*
+	 * input: kmer
+	 * output: abundance
+	 */
+	uint64_t abundance(string& kmer){
+
+		//auto idx = find_kmer(kmer);
+		//return idx == number_of_nodes()?0:weights_[idx]; //TODO: use the compressed weights once 'weights' has been freed
+
+		uint64_t n = find_kmer(kmer);
+
+		if(n==number_of_nodes()) return 0;
+
+		//cumulate deltas on the path from n to its nearest sampled ancestor
+		int64_t cumulated_deltas = 0;
+
+		while(not sampled[n]){
+
+			cumulated_deltas -= positive_to_int(deltas[n]);
+			n = mst_parent(n);
+
+		}
+
+		assert(sampled[n]);
+
+		auto sum = int64_t(samples[sampled_rank(n)]) + cumulated_deltas;
+
+		assert(sum>=0);
+
+		return sum;
+
+	}
+
+	/*
+	 * edge is represented as pair <node, rank> where rank is the rank among outgoing edges of node
+	 */
+	int weight_of_edge_(edge_t e){
+
+		assert(e.first<number_of_nodes());
+		assert(e.second < out_degree_(e.first));
+
+		assert(out_label_(e.first, e.second) != '$');
+
+		auto target = OUT_[start_positions_out_[e.first] + e.second];
+
+		assert(target<number_of_nodes());
+
+		return abundance_(e.first) - abundance_(target);
+
+	}
+
+private:
+
+
+	/*
+	 * returns parent of n in the MST
+	 */
+	uint64_t mst_parent(uint64_t n){
+
+		assert(not is_root_in_mst(n));
+
+		auto in_deg = in_degree(n);
+
+		uint64_t first_pos = n==0?0:IN_sel(n)+1;
+		uint64_t last_pos = first_pos+in_deg-1;
+
+		//there can be only 1 incoming edge in the MST
+		assert(mst_rank(last_pos+1) == mst_rank(first_pos)+1);
+
+		while(not mst[first_pos] and first_pos <= last_pos) first_pos++;
+
+		assert(first_pos <= last_pos);
+
+		return OUT_rank(FL(first_pos));
+
+	}
+
+	/*
+	 * true iff n is a root in the mst forest
+	 */
+	bool is_root_in_mst(uint64_t n){
+
+		auto in_deg = in_degree(n);
+
+		uint64_t first_pos = n==0?0:IN_sel(n)+1;
+		uint64_t last_pos = first_pos+in_deg-1;
+
+		return mst_rank(last_pos+1) == mst_rank(first_pos);
+
+	}
+
+
+	/*
+	 * returns the in-degree of the node
+	 * since this is a dBg and there is only one source node ($$$),
+	 * this number is always between 1 and 4
+	 *
+	 */
+	uint8_t in_degree(uint64_t node){
+		assert(node<number_of_nodes());
+		return IN_sel(node+1) - (node == 0 ? 0 : IN_sel(node)+1) +1;
+	}
+	/*
+	 * returns the out-degree of the node
+	 * this number is always between 0 and 5 (count also $ if present)
+	 *
+	 */
+	uint8_t out_degree(uint64_t node){
+		assert(node<number_of_nodes());
+		return OUT_sel(node+1) - (node == 0 ? 0 : OUT_sel(node)+1) +1;
 	}
 
 	/*
@@ -1140,30 +1452,11 @@ public:
 		}
 
 		if(verbose){
-			cout << " Removed " << initial_nr_of_nodes-number_of_nodes() << " unnecessary nodes and " << initial_nr_of_edges-out_labels_.size() << " unnecessary edges." << endl;
+			cout << " Removed " << initial_nr_of_nodes-number_of_nodes() << " dummy nodes and " << initial_nr_of_edges-out_labels_.size() << " dummy edges." << endl;
 		}
 
 	}
 
-	/*
-	 * edge is represented as pair <node, rank> where rank is the rank among outgoing edges of node
-	 */
-	int weight_of_edge_(edge_t e){
-
-		assert(e.first<number_of_nodes());
-		assert(e.second < out_degree_(e.first));
-
-		assert(out_label_(e.first, e.second) != '$');
-
-		auto target = OUT_[start_positions_out_[e.first] + e.second];
-
-		assert(target<number_of_nodes());
-
-		return abundance_(e.first) - abundance_(target);
-
-	}
-
-private:
 
 	/*
 	 * abundance of node n (represented as integer, i.e. its rank among all nodes)
@@ -1548,6 +1841,8 @@ private:
 
 		deltas = cint_vector(deltas_);
 
+		//cout << "******* cost gamma = " << cost_gamma(deltas_) << endl;
+
 		{
 
 			//marks edges (in IN order) that belong to the MST
@@ -1609,6 +1904,12 @@ private:
 	uint64_t MAX_WEIGHT = 0; //max abundance
 	double MEAN_WEIGHT = 0; //mean abundance
 	uint64_t padded_kmers = 0;//number of nodes corresponding to a k-mers padded with $
+
+	//filled only after serialization:
+
+	uint64_t DBG_SIZE = 0;//size in bytes of the dBg
+	uint64_t DELTAS_SIZE = 0;//size in bytes of the deltas
+	uint64_t MST_SIZE = 0;//size in bytes of the MST + samples
 
 
 	/*
