@@ -130,7 +130,7 @@ int main(int argc, char** argv){
 	}
 
 	uint64_t elapsed = std::chrono::duration_cast<std::chrono::seconds>(t2 - t1).count();
-	cout << "Done. Build time (hh:mm:ss): " << elapsed/3600 << ":" << (elapsed%3600)/60 << ":" << (elapsed%3600)%60 << endl << endl;
+	cout << "\nDone. Build time (hh:mm:ss): " << elapsed/3600 << ":" << (elapsed%3600)/60 << ":" << (elapsed%3600)%60 << endl;
 
 	cout << "Number of distinct kmers " << cwdbg.number_of_distinct_kmers() << endl;
 	cout << "Number of padded kmers " << cwdbg.number_of_padded_kmers() << endl;

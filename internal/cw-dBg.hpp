@@ -580,6 +580,10 @@ public:
 
 		macro_tree_decomposition(verbose);
 
+		if(verbose)
+			cout << "Compressing all data structures ... " << endl;
+
+		compress_structures();
 
 
 	}
@@ -844,16 +848,13 @@ public:
 	 */
 	void prune(bool verbose){
 
+
 		if(verbose){
-
-			cout << "Pruning the dBg ... " << endl;
-			cout << "Statistics before pruning:" << endl;
-			cout << " Number of distinct kmers " << number_of_distinct_kmers() << endl;
-			cout << " Number of padded kmers " << number_of_padded_kmers() << endl;
-			cout << " Number of nodes (distinct kmers + padded kmers) " << number_of_nodes() << endl;
-			cout << " Number of edges " << out_labels_.size() << endl;
-
+			cout << "Pruning ..." << endl;
 		}
+
+		uint64_t initial_nr_of_nodes = number_of_nodes();
+		uint64_t initial_nr_of_edges = out_labels_.size();
 
 		//mark all padded nodes
 		vector<bool> padded(number_of_nodes(),false);
@@ -990,6 +991,8 @@ public:
 					//compute new out-degree
 					uint8_t new_out_deg = 0;
 
+					assert(out_deg>0);
+
 					for(uint8_t k = 0;k<out_deg;++k){
 
 						char c = out_label_(n,k);
@@ -1015,8 +1018,6 @@ public:
 
 					}
 
-					start_OUT += new_out_deg;
-
 					//the root is allowed to have out degree 1 because we mark it as necessary even if it might not be
 					//we fix this in the next line
 					assert(n == 0 or new_out_deg>0);
@@ -1026,6 +1027,8 @@ public:
 						new_out_labels.push_back('$');
 						new_out_deg=1;
 					}
+
+					start_OUT += new_out_deg;
 
 				}
 
@@ -1126,6 +1129,19 @@ public:
 		assert(idx == number_of_nodes());
 
 		weights_.resize(number_of_nodes());
+
+		for(uint64_t n=0;n<nr_of_nodes;++n){
+
+			assert(in_degree_(n)>0);
+			assert(in_degree_(n)<=5);
+			assert(out_degree_(n)<=5);
+			assert(out_degree_(n)>0);
+
+		}
+
+		if(verbose){
+			cout << " Removed " << initial_nr_of_nodes-number_of_nodes() << " unnecessary nodes and " << initial_nr_of_edges-out_labels_.size() << " unnecessary edges." << endl;
+		}
 
 	}
 
@@ -1381,7 +1397,7 @@ private:
 		//rrr_vector<> sampled;
 		//rrr_vector<>::rank_1_type sampled_rank;
 
-		sampled_ = vector<bool>(nr_of_nodes,false);
+		sampled_ = bit_vector(nr_of_nodes,false);
 
 		//post-order visit of the MST
 		queue<uint64_t> nodes;
@@ -1452,6 +1468,139 @@ private:
 
 	}
 
+	void compress_structures(){
+
+		//str_type BWT;
+
+		construct_im(BWT,out_labels_,1);
+
+		//vector<uint64_t> C; //C array (encoding F column of BWT matrix)
+
+		//bitv_type IN;
+		//typename bitv_type::rank_1_type IN_rank;
+		//typename bitv_type::select_1_type IN_sel;
+
+		{
+
+			bit_vector IN_bv(IN_.size());
+
+			uint64_t idx=0;
+
+			for(uint64_t n=0;n<number_of_nodes();++n){
+
+				auto in_deg = in_degree_(n);
+
+				assert(in_deg>0);
+
+				for(uint8_t off = 0; off < in_deg-1; ++off){
+
+					IN_bv[idx++] = 0;
+
+				}
+
+				IN_bv[idx++] = 1;
+
+			}
+
+			assert(idx == IN_.size());
+
+			IN = bitv_type(IN_bv);
+			IN_rank = typename bitv_type::rank_1_type(&IN);
+			IN_sel = typename bitv_type::select_1_type(&IN);
+
+		}
+
+		//bitv_type OUT;
+		//typename bitv_type::rank_1_type OUT_rank;
+		//typename bitv_type::select_1_type OUT_sel;
+
+		{
+
+			bit_vector OUT_bv(OUT_.size());
+
+			uint64_t idx=0;
+
+			for(uint64_t n=0;n<number_of_nodes();++n){
+
+				auto out_deg = out_degree_(n);
+
+				assert(out_deg>0);
+
+				for(uint8_t off = 0; off < out_deg-1; ++off){
+
+					OUT_bv[idx++] = 0;
+
+				}
+
+				OUT_bv[idx++] = 1;
+
+			}
+
+			assert(idx == OUT_.size());
+
+			OUT = bitv_type(OUT_bv);
+			OUT_rank = typename bitv_type::rank_1_type(&OUT);
+			OUT_sel = typename bitv_type::select_1_type(&OUT);
+
+		}
+
+		//cint_vector deltas; //compressed deltas on the edges of the MST, in IN order (i.e. on the F column)
+
+		deltas = cint_vector(deltas_);
+
+		{
+
+			//marks edges (in IN order) that belong to the MST
+			//rrr_vector<> mst;
+			//rrr_vector<>::rank_1_type mst_rank;
+
+			bit_vector mst_bv(IN_.size(),0);
+
+			uint64_t idx=0;
+
+			for(uint64_t n=0;n<number_of_nodes();++n){
+
+				auto in_deg = in_degree_(n);
+
+				assert(in_deg>0);
+
+				for(uint8_t off = 0; off < in_deg; ++off){
+
+					if(parent_in_mst_[n] == IN_[start_positions_in_[n]+off]){
+
+						mst_bv[idx++] = 1;
+
+					}else{
+
+						mst_bv[idx++] = 0;
+
+					}
+
+				}
+
+			}
+
+			assert(idx == IN_.size());
+
+			mst = rrr_vector<>(mst_bv);
+			mst_rank = rrr_vector<>::rank_1_type(&mst);
+
+		}
+
+		//marks sampled nodes on the dBg
+		//rrr_vector<> sampled;
+		//rrr_vector<>::rank_1_type sampled_rank;
+
+		sampled = rrr_vector<>(sampled_);
+		sampled_rank = rrr_vector<>::rank_1_type(&sampled);
+
+		//sampled weights
+		//cint_vector samples;
+
+		samples = cint_vector(samples_);
+
+	}
+
 	//parameters:
 
 	uint8_t k; //order
@@ -1484,7 +1633,7 @@ private:
 	//for each node n, deltas_[n] is the weight of the edge leading to n, or 0 if n is a root.
 	vector<uint64_t> deltas_;
 
-	vector<bool> sampled_; 	//marks sampled nodes on the dBg
+	bit_vector sampled_; 	//marks sampled nodes on the dBg
 
 	vector<uint64_t> samples_; 	//weight samples
 
