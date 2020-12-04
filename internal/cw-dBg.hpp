@@ -360,7 +360,14 @@ public:
 	 * do_not_optimize: turn off space optimization (does not prune dBg)
 	 * srate: sample rate
 	 */
-	cw_dBg(string filename, format_t format, int nlines = 0, uint8_t k = 28, uint16_t srate = 64, bool do_not_optimize = false, bool verbose = true) : k(k), srate(srate){
+	cw_dBg( string filename,
+			format_t format,
+			int nlines = 0,
+			uint8_t k = 28,
+			uint16_t srate = 64,
+			bool XBWT = true,
+			bool do_not_optimize = false,
+			bool verbose = true) : k(k), srate(srate), XBWT(XBWT){
 
 		assert(k>0 and k<=41);
 
@@ -713,6 +720,9 @@ public:
 		if(verbose)
 			cout << " Weight of MST: " << w << " bits (" << double(w)/number_of_distinct_kmers() << " bits/kmer if stored with Elias Gamma)" << endl;
 
+		if(XBWT)
+			make_forest(verbose);
+
 		if(verbose)
 			cout << "Computing deltas on the MST edges ... " << endl;
 
@@ -770,6 +780,10 @@ public:
 		out.write((char*)&padded_kmers,sizeof(padded_kmers));
 		DBG_SIZE += sizeof(padded_kmers);
 
+		char XBWT_c = XBWT;
+		out.write(&XBWT_c,sizeof(XBWT_c));
+		DBG_SIZE += sizeof(XBWT_c);
+
 		DBG_SIZE += BWT.serialize(out);
 		DBG_SIZE += IN.serialize(out);
 		DBG_SIZE += IN_rank.serialize(out);
@@ -787,7 +801,6 @@ public:
 		written_bytes += DELTAS_SIZE;
 
 		MST_SIZE += mst.serialize(out);
-		MST_SIZE += mst_rank.serialize(out);
 		MST_SIZE += sampled.serialize(out);
 		MST_SIZE += sampled_rank.serialize(out);
 		MST_SIZE += samples->serialize(out);
@@ -985,43 +998,22 @@ private:
 	 */
 	uint64_t mst_parent(uint64_t n){
 
-		if(is_root_in_mst(n)) return nr_of_nodes;
-
 		auto in_deg = in_degree(n);
 
 		assert(n>0);
 
-		uint64_t first_pos = n==0?0:IN_sel(n)+1;
+		uint64_t first_pos = n==0?0:IN_sel__(n)+1;
 		uint64_t last_pos = first_pos+in_deg-1;
 
 		//there can be only 1 incoming edge in the MST
-		assert(mst_rank(last_pos+1) == mst_rank(first_pos)+1);
 
-		while(not mst[first_pos] and first_pos <= last_pos) first_pos++;
+		while(first_pos <= last_pos && not mst__(first_pos)) first_pos++;
 
-		assert(mst[first_pos]);
+		assert(first_pos > last_pos || mst__(first_pos));
 
-		assert(first_pos <= last_pos);
-		assert(toCHAR(F_int(first_pos))!='$');
-
-		return OUT_rank(FL(first_pos));
+		return first_pos <= last_pos ? OUT_rank(FL(first_pos)) : nr_of_nodes;
 
 	}
-
-	/*
-	 * true iff n is a root in the mst forest
-	 */
-	bool is_root_in_mst(uint64_t n){
-
-		auto in_deg = in_degree(n);
-
-		uint64_t first_pos = n==0?0:IN_sel(n)+1;
-		uint64_t last_pos = first_pos+in_deg-1;
-
-		return mst_rank(last_pos+1) == mst_rank(first_pos);
-
-	}
-
 
 	/*
 	 * returns the in-degree of the node
@@ -1031,7 +1023,7 @@ private:
 	 */
 	uint8_t in_degree(uint64_t node){
 		assert(node<number_of_nodes());
-		return IN_sel(node+1) - (node == 0 ? 0 : IN_sel(node)+1) +1;
+		return IN_sel__(node+1) - (node == 0 ? 0 : IN_sel__(node)+1) +1;
 	}
 	/*
 	 * returns the out-degree of the node
@@ -1228,20 +1220,6 @@ private:
 			}
 
 		}
-
-		//check on padded nodes
-
-		/*
-		for(uint64_t n = 0; n<number_of_nodes();++n){
-
-			if(padded[n] and n>0){
-
-				assert(in_degree_(n)==1);
-				assert(padded[move_backward_(n,0)]);
-
-			}
-
-		}*/
 
 		//now, for each non-padded kmer X that is preceded only by a padded kmer (i.e. a source of the dBg),
 		//mark as necessary all padded kmers that lead from the root to X
@@ -1467,7 +1445,192 @@ private:
 		}
 
 		if(verbose){
-			cout << " Removed " << initial_nr_of_nodes-number_of_nodes() << " dummy nodes and " << initial_nr_of_edges-out_labels_.size() << " dummy edges." << endl;
+			cout << " Removed " << initial_nr_of_nodes-number_of_nodes() << " nodes and " << initial_nr_of_edges-out_labels_.size() << " edges." << endl;
+		}
+
+	}
+
+
+
+	/*
+	 * turns the graph into a forest corresponding to the MST forest previously computed
+	 */
+	void make_forest(bool verbose){
+
+		if(verbose){
+			cout << "Turning graph into a forest ..." << endl;
+		}
+
+		uint64_t initial_nr_of_nodes = number_of_nodes();
+		uint64_t initial_nr_of_edges = out_labels_.size();
+
+		{
+
+			string new_out_labels;
+			vector<uint64_t> new_start_positions_in; //for each node, its starting position in IN_
+			vector<uint64_t> new_start_positions_out; //for each node, its starting position in OUT_ and out_labels_
+			vector<bool> new_mst_out_edges_;
+
+			uint64_t start_IN = 0;
+			uint64_t start_OUT = 0;
+
+			for(uint64_t n = 0;n<number_of_nodes();++n){
+
+				new_start_positions_in.push_back(start_IN);
+				new_start_positions_out.push_back(start_OUT);
+
+				//in- and out-degree of the node
+				auto in_deg = in_degree_(n);
+				auto out_deg = out_degree_(n);
+
+				//it's a tree: in-degree always equal to 1 (for the roots we have an incoming edge labeled $)
+				uint8_t new_in_deg = 1;
+
+				start_IN += new_in_deg;
+
+				//compute new out-degree
+				uint8_t new_out_deg = 0;
+
+				assert(out_deg>0);
+
+				for(uint8_t k = 0;k<out_deg;++k){
+
+					char c = out_label_(n,k);
+
+					if(c == '$'){
+
+						//previously we allowed $ only if it was the only outgoing label
+						assert(out_deg==1);
+						new_out_deg++;
+						new_out_labels.push_back(c);
+						new_mst_out_edges_.push_back(false);
+
+					//keep outgoing edge only if it's part of the MST
+					}else if(mst_out_edges_[start_positions_out_[n]+k]){
+
+						new_out_labels.push_back(c);
+						new_out_deg++;
+						new_mst_out_edges_.push_back(true);
+
+					}
+
+				}
+
+				//in this case it means that all children are already "captured" in the
+				//MST by some other node. Add just one outgoing label $ to this node.
+				if(new_out_deg==0){
+
+					new_out_deg++;
+					new_out_labels.push_back('$');
+					new_mst_out_edges_.push_back(false);
+
+				}
+
+				start_OUT += new_out_deg;
+
+			}
+
+			out_labels_ = new_out_labels;
+			start_positions_in_ = new_start_positions_in; //for each node, its starting position in IN_
+			start_positions_out_ = new_start_positions_out; //for each node, its starting position in OUT_ and out_labels_
+			mst_out_edges_ = new_mst_out_edges_;
+
+			assert(start_positions_in_.size() == start_positions_out_.size());
+
+			nr_of_nodes = start_positions_in_.size();
+
+		}
+
+		//overwrite C
+
+		C = vector<uint64_t>(5,0);
+
+		uint64_t F_length = 1;
+
+		for(auto c : out_labels_){
+
+			C[toINT(c)]++;
+			F_length += c!='$';
+
+		}
+
+		C[0] = 1;//there is one $ in the F column (it's the only incoming edge of the root kmer $$$)
+		C[1] += C[0];
+		C[2] += C[1];
+		C[3] += C[2];
+		C[4] += C[3];
+
+		C[4] = C[3];
+		C[3] = C[2];
+		C[2] = C[1];
+		C[1] = C[0];
+		C[0] = 0; //$ starts at position 0 in the F column
+
+		IN_ = vector<uint64_t>(F_length);
+		IN_[0] = nr_of_nodes;
+		OUT_ = vector<uint64_t>(out_labels_.size(),nr_of_nodes);
+
+		//now fill IN_ and OUT_
+
+		//current node in IN_, for each letter
+		vector<uint64_t> curr_node_in(5);
+
+		for(auto c : {'A','C','G','T'}){
+
+			curr_node_in[toINT(c)] = distance(start_positions_in_.begin(),lower_bound(start_positions_in_.begin(),start_positions_in_.end(),C[toINT(c)]));
+			assert(start_positions_in_[curr_node_in[toINT(c)]] == C[toINT(c)]);
+
+		}
+
+		uint64_t curr_node_out = 0;
+
+		vector<uint64_t> curr_pos_in(5);
+
+		for(auto c : {'A','C','G','T'}){
+
+			curr_pos_in[toINT(c)] = C[toINT(c)];
+
+		}
+
+		for(uint64_t curr_pos_out=0;curr_pos_out<out_labels_.size();++curr_pos_out){
+
+			//update curr_node_out if we reach the position of the next node
+			if(curr_node_out < nr_of_nodes-1 && curr_pos_out == start_positions_out_[curr_node_out+1]) curr_node_out++;
+
+			char c  = out_labels_[curr_pos_out];
+
+			if(c != '$'){
+
+				//update curr_node_in if we reach the position of the next node
+				if(curr_node_in[toINT(c)] < nr_of_nodes-1 && curr_pos_in[toINT(c)] == start_positions_in_[curr_node_in[toINT(c)]+1]) curr_node_in[toINT(c)]++;
+
+				OUT_[curr_pos_out] = curr_node_in[toINT(c)];
+
+				assert(curr_pos_in[toINT(c)] != 0);
+				IN_[curr_pos_in[toINT(c)]] = curr_node_out;
+
+				curr_pos_in[toINT(c)]++;
+
+			}
+
+		}
+
+		//the number of nodes cannot change as this is a MST
+		assert(initial_nr_of_nodes == number_of_nodes());
+
+		for(uint64_t n=0;n<nr_of_nodes;++n){
+
+			assert(in_degree_(n)>0);
+			assert(in_degree_(n)<=5);
+			assert(out_degree_(n)<=5);
+			assert(out_degree_(n)>0);
+
+		}
+
+		assert(mst_out_edges_.size() == OUT_.size());
+
+		if(verbose){
+			cout << " Removed " << initial_nr_of_edges-out_labels_.size() << " edges." << endl;
 		}
 
 	}
@@ -1537,7 +1700,7 @@ private:
 
 		//cout << "on F " << first_on_F << " " << last_on_F << endl;
 
-		return {IN_rank(first_on_F), IN_rank(last_on_F)};
+		return {IN_rank__(first_on_F), IN_rank__(last_on_F)};
 
 	}
 
@@ -1798,7 +1961,7 @@ private:
 		//typename bitv_type::rank_1_type IN_rank;
 		//typename bitv_type::select_1_type IN_sel;
 
-		{
+		if(not XBWT){
 
 			bit_vector IN_bv(IN_.size());
 
@@ -1868,11 +2031,10 @@ private:
 
 		//cout << "******* cost gamma = " << cost_gamma(deltas_) << endl;
 
-		{
+		if(not XBWT){
 
 			//marks edges (in IN order) that belong to the MST
 			//rrr_vector<> mst;
-			//rrr_vector<>::rank_1_type mst_rank;
 
 			bit_vector mst_bv(IN_.size(),0);
 
@@ -1903,7 +2065,6 @@ private:
 			assert(idx == IN_.size());
 
 			mst = rrr_vector<>(mst_bv);
-			mst_rank = rrr_vector<>::rank_1_type(&mst);
 
 		}
 
@@ -1921,6 +2082,38 @@ private:
 
 	}
 
+	/*
+	 * these functions are an interface over IN, IN_rank, IN_sel, mst: if XBWT is true, these structures are
+	 * not actually necessary
+	 */
+
+	bool IN__(uint64_t i){
+
+		return XBWT ? true : IN[i];
+
+	}
+
+	uint64_t IN_rank__(uint64_t i){
+
+		return XBWT ? i : IN_rank(i);
+
+	}
+
+	uint64_t IN_sel__(uint64_t i){
+
+		assert(i>0);
+
+		return XBWT ? i-1 : IN_sel(i);
+
+	}
+
+	bool mst__(uint64_t i){
+
+		return XBWT ? true : mst[i];
+
+	}
+
+
 	//parameters:
 
 	uint8_t k; //order
@@ -1929,6 +2122,8 @@ private:
 	uint64_t MAX_WEIGHT = 0; //max abundance
 	double MEAN_WEIGHT = 0; //mean abundance
 	uint64_t padded_kmers = 0;//number of nodes corresponding to a k-mers padded with $
+	bool XBWT; //are we memorizing just the spanning tree (XBWT)? otherwise, a heavier BOSS representation
+
 
 	//filled only after serialization:
 
@@ -1955,7 +2150,7 @@ private:
 	vector<uint64_t> parent_in_mst_; //one per node. For the roots we write nr_of_nodes
 	vector<bool> mst_out_edges_; //marks outgoing edges of the MST, in OUT_ order
 
-	//deltas on MST out edges
+	//deltas on MST input edges
 	//for each node n, deltas_[n] is the weight of the edge leading to n, or 0 if n is a root.
 	vector<uint64_t> deltas_;
 
@@ -1985,7 +2180,6 @@ private:
 
 	//marks edges (in IN order) that belong to the MST
 	rrr_vector<> mst;
-	rrr_vector<>::rank_1_type mst_rank;
 
 	//marks sampled nodes on the dBg
 	rrr_vector<> sampled;
