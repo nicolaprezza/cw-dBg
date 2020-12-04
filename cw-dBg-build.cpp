@@ -15,7 +15,6 @@ format_t format = fastq;
 bool pause_ = false;
 bool do_not_optimize = false;
 bool XBWT = false;//still working on this
-bool XBWT = false;//still working on this
 
 void help(){
 	cout << "cw-dBg-build: builds the compressed weighted de Bruijn graph." << endl << endl;
