@@ -183,6 +183,8 @@ public:
 				w = w>>1;
 			}
 
+			assert(w==1);
+
 		}
 
 		assert(i_pref == prefixes_bv.size());
@@ -201,11 +203,8 @@ public:
 
 		assert(i<size());
 
-		assert(i==0 or (i>0 and i<=size()));
-		assert(i+1<=size());
-
-
 		uint64_t start = i==0?0:(prefixes_sel(i)+1-i);//included
+
 		uint64_t end = prefixes_sel(i+1) - i;//excluded
 
 		uint64_t n_b = end-start;
@@ -214,6 +213,7 @@ public:
 
 		for(uint64_t k=0; k<n_b; ++k){
 
+			assert(end-k-1 < codes.size());
 			x = (x<<1) | codes[end-k-1];
 
 		}
@@ -333,15 +333,22 @@ template	<	class bitv_type = rrr_vector<>,
 				//class str_type = wt_huff<>
 				//class cint_vector = dac_vector_dp<rrr_vector<> >
 				//class cint_vector = dac_vector<>
-				class cint_vector = vlc_vector<coder::elias_gamma>
+				//class cint_vector = vlc_vector<coder::elias_gamma>
 				//class cint_vector = vlc_vector<coder::elias_delta>
-				//class cint_vector = gamma_vector
+				class cint_vector = gamma_vector
 			>
 class cw_dBg{
 
 public:
 
 	cw_dBg(){}
+
+	~cw_dBg(){
+
+		delete samples;
+		delete deltas;
+
+	}
 
 	/*
 	 * constructor from fastq/fasta file
@@ -721,6 +728,7 @@ public:
 
 		compress_structures();
 
+		//TODO free memory of underscored (uncompressed) vectors
 
 	}
 
@@ -774,7 +782,7 @@ public:
 
 		written_bytes += DBG_SIZE;
 
-		DELTAS_SIZE += deltas.serialize(out);
+		DELTAS_SIZE += deltas->serialize(out);
 
 		written_bytes += DELTAS_SIZE;
 
@@ -782,7 +790,7 @@ public:
 		MST_SIZE += mst_rank.serialize(out);
 		MST_SIZE += sampled.serialize(out);
 		MST_SIZE += sampled_rank.serialize(out);
-		MST_SIZE += samples.serialize(out);
+		MST_SIZE += samples->serialize(out);
 
 		written_bytes += MST_SIZE;
 
@@ -935,15 +943,15 @@ public:
 
 		while(not sampled[n]){
 
-			assert(n<deltas.size());
+			assert(n<deltas->size());
 
-			cumulated_deltas -= positive_to_int(deltas[n]);
+			cumulated_deltas -= positive_to_int(deltas->operator[](n));
 			n = mst_parent(n);
 
 		}
 		assert(sampled[n]);
 
-		auto sum = int64_t(samples[sampled_rank(n)]) + cumulated_deltas;
+		auto sum = int64_t(samples->operator[](sampled_rank(n))) + cumulated_deltas;
 
 		assert(sum>=0);
 
@@ -1856,7 +1864,7 @@ private:
 
 		//cint_vector deltas; //compressed deltas on the edges of the MST, in IN order (i.e. on the F column)
 
-		deltas = cint_vector(deltas_);
+		deltas = new cint_vector(deltas_);
 
 		//cout << "******* cost gamma = " << cost_gamma(deltas_) << endl;
 
@@ -1909,7 +1917,7 @@ private:
 		//sampled weights
 		//cint_vector samples;
 
-		samples = cint_vector(samples_);
+		samples = new cint_vector(samples_);
 
 	}
 
@@ -1973,7 +1981,7 @@ private:
 	typename bitv_type::rank_1_type OUT_rank;
 	typename bitv_type::select_1_type OUT_sel;
 
-	cint_vector deltas; //compressed deltas on the edges of the MST, in IN order (i.e. on the F column)
+	cint_vector * deltas; //compressed deltas on the edges of the MST, in IN order (i.e. on the F column)
 
 	//marks edges (in IN order) that belong to the MST
 	rrr_vector<> mst;
@@ -1984,7 +1992,7 @@ private:
 	rrr_vector<>::rank_1_type sampled_rank;
 
 	//sampled weights
-	cint_vector samples;
+	cint_vector * samples;
 
 };
 

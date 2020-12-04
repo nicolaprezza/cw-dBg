@@ -107,7 +107,6 @@ int main(int argc, char** argv){
 	//cw_dBg<bit_vector, wt_huff<> > cwdbg(input_file, format, nlines, k, srate, true); //fast - uses uncompressed vectors
 	cw_dBg<> cwdbg(input_file, format, nlines, k, srate, do_not_optimize, true); //slow but very small - uses rrr-compressed bit-vectors everywhere
 
-
 	/*string km;
 
 	km = "CGA";	cout << km << " " << cwdbg.find_kmer(km) << endl;
@@ -145,12 +144,12 @@ int main(int argc, char** argv){
 	uint64_t elapsed = std::chrono::duration_cast<std::chrono::seconds>(t2 - t1).count();
 	cout << "\nDone. Build time (hh:mm:ss): " << elapsed/3600 << ":" << (elapsed%3600)/60 << ":" << (elapsed%3600)%60 << endl;
 
-	cout << "Number of distinct kmers " << cwdbg.number_of_distinct_kmers() << endl;
-	cout << "Number of dummy kmers " << cwdbg.number_of_padded_kmers() << endl;
-	cout << "Number of nodes (original kmers + dummy kmers) " << cwdbg.number_of_nodes() << endl;
+	cout << "Number of kmers " << cwdbg.number_of_distinct_kmers() << endl;
+	cout << "Number of dummy nodes " << cwdbg.number_of_padded_kmers() << endl;
+	cout << "Total number of nodes (kmers + dummy nodes) " << cwdbg.number_of_nodes() << endl;
 	cout << "Number of edges " << cwdbg.number_of_edges() << endl;
 	cout << "Max abundance " << cwdbg.max_weight() << endl;
-	cout << "Mean abundance (only on original kmers) " << cwdbg.mean_weight() << endl;
+	cout << "Mean abundance " << cwdbg.mean_weight() << endl;
 
 	/*
 	cout << "SPACE: " << endl;
@@ -172,8 +171,9 @@ int main(int argc, char** argv){
 
 	cout << "SPACE: " << endl;
 	cout << "  de Bruijn graph (BOSS): " << double(cwdbg.dbg_size_in_bits())/cwdbg.number_of_distinct_kmers() << " bits per kmer" << endl;
-	cout << "  compressed deltas: " << double(cwdbg.deltas_size_in_bits())/cwdbg.number_of_distinct_kmers() << " bits per kmer" << endl;
-	cout << "  MST and samples: " << double(cwdbg.mst_size_in_bits())/cwdbg.number_of_distinct_kmers() << " bits per kmer" << endl;
-	cout << "  total: " << double(cwdbg.size_in_bits())/cwdbg.number_of_distinct_kmers() << " bits per kmer" << endl<<endl;
+	cout << "  Compressed weights: " << double(cwdbg.mst_size_in_bits()+cwdbg.deltas_size_in_bits())/cwdbg.number_of_distinct_kmers() << " bits per kmer. Divided in:" << endl;
+	cout << "    Compressed deltas: " << double(cwdbg.deltas_size_in_bits())/cwdbg.number_of_distinct_kmers() << " bits per kmer" << endl;
+	cout << "    MST and samples: " << double(cwdbg.mst_size_in_bits())/cwdbg.number_of_distinct_kmers() << " bits per kmer" << endl;
+	cout << "  Total: " << double(cwdbg.size_in_bits())/cwdbg.number_of_distinct_kmers() << " bits per kmer" << endl<<endl;
 
 }
