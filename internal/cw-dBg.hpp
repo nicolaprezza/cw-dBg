@@ -707,7 +707,7 @@ public:
 
 		MEAN_WEIGHT /= (weights_.size()-padded_kmers);
 
-		if(not do_not_optimize)
+		if((not do_not_optimize) and (not XBWT))
 			prune(verbose);
 
 		//compute MST
@@ -722,6 +722,9 @@ public:
 
 		if(XBWT)
 			make_forest(verbose);
+
+		if((not do_not_optimize) and XBWT)
+			prune(verbose);
 
 		if(verbose)
 			cout << "Computing deltas on the MST edges ... " << endl;
