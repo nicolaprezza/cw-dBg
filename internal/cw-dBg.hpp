@@ -238,6 +238,21 @@ public:
 
 	}
 
+	/* load the structure from the istream
+	 */
+	void load(std::istream& in) {
+
+		in.read((char*)&size_,sizeof(size_));
+
+		prefixes.load(in);
+
+		prefixes_sel.load(in); //stored just to measure the final space
+		prefixes_sel = rrr_vector<>::select_1_type(&prefixes);//need to re-build because it has a pointer to prefixes
+
+		codes.load(in);
+
+	}
+
 private:
 
 	uint64_t size_ = 0;
@@ -267,6 +282,7 @@ class comp_edge{
 	dbg_type& dbg;
 
 };
+
 
 /*
  * input: edge (XYZ,W) stored as integer of 128 bits (see "format example" below), character c stored in 3 bits (see function toINT), and order k
@@ -350,6 +366,12 @@ public:
 
 	}
 
+	cw_dBg(const string & input_index) {
+
+		load_from_file(input_index);
+
+	}
+
 	/*
 	 * constructor from fastq/fasta file
 	 *
@@ -360,7 +382,7 @@ public:
 	 * do_not_optimize: turn off space optimization (does not prune dBg)
 	 * srate: sample rate
 	 */
-	cw_dBg( string filename,
+	cw_dBg( const string & filename,
 			format_t format,
 			int nlines = 0,
 			uint8_t k = 28,
@@ -741,8 +763,15 @@ public:
 
 		compress_structures();
 
-		//TODO free memory of underscored (uncompressed) vectors
+		if(verbose)
+			cout << "Freeing memory ... " << endl;
 
+		free_uncompressed_structures();
+
+	}
+
+	uint8_t get_order(){
+		return k;
 	}
 
 	/*
@@ -755,7 +784,6 @@ public:
 		out.close();
 
 	}
-
 
 	uint64_t serialize(ostream& out){
 
@@ -794,8 +822,8 @@ public:
 		DBG_SIZE += OUT.serialize(out);
 		DBG_SIZE += OUT_rank.serialize(out);
 		DBG_SIZE += OUT_sel.serialize(out);
-		out.write((char*)C.data(),C.size()*sizeof(uint64_t));
-		DBG_SIZE += C.size()*sizeof(uint64_t);
+		out.write((char*)C.data(),5*sizeof(uint64_t));
+		DBG_SIZE += 5*sizeof(uint64_t);
 
 		written_bytes += DBG_SIZE;
 
@@ -811,6 +839,65 @@ public:
 		written_bytes += MST_SIZE;
 
 		return written_bytes;
+
+	}
+
+
+	/*
+	 * load the structure from the path specified.
+	 */
+	void load_from_file(string path){
+
+		std::ifstream in(path);
+		load(in);
+		in.close();
+
+	}
+
+
+	/* load the structure from the istream
+	 */
+	void load(std::istream& in) {
+
+		in.read((char*)&k,sizeof(k));
+		in.read((char*)&srate,sizeof(srate));
+		in.read((char*)&nr_of_nodes,sizeof(nr_of_nodes));
+		in.read((char*)&MAX_WEIGHT,sizeof(MAX_WEIGHT));
+		in.read((char*)&MEAN_WEIGHT,sizeof(MEAN_WEIGHT));
+		in.read((char*)&padded_kmers,sizeof(padded_kmers));
+
+		char XBWT_c;
+		in.read(&XBWT_c,sizeof(XBWT_c));
+		XBWT = XBWT_c;
+
+		BWT.load(in);
+
+		IN.load(in);
+		IN_rank.load(in);//TODO might have to rebuild all rank/select DS
+		IN_rank = typename bitv_type::rank_1_type(&IN);
+		IN_sel.load(in);
+		IN_sel = typename bitv_type::select_1_type(&IN);
+
+		OUT.load(in);
+		OUT_rank.load(in);
+		OUT_rank = typename bitv_type::rank_1_type(&OUT);
+		OUT_sel.load(in);
+		OUT_sel = typename bitv_type::select_1_type(&OUT);
+
+		C = vector<uint64_t>(5,0);
+		in.read((char*)C.data(),5*sizeof(uint64_t));
+
+		deltas = new cint_vector();
+		deltas->load(in);
+
+		mst.load(in);
+
+		sampled.load(in);
+		sampled_rank.load(in);
+		sampled_rank = rrr_vector<>::rank_1_type(&sampled);
+
+		samples = new cint_vector();
+		samples->load(in);
 
 	}
 
@@ -994,6 +1081,43 @@ public:
 	}
 
 private:
+
+
+	void free_uncompressed_structures(){
+
+		//labels of outgoing edges. Corresponds to the BWT, except that there can be unnecessary $ here (will be removed in BWT)
+		out_labels_.clear();
+		out_labels_.shrink_to_fit();
+
+		OUT_.clear(); //outgoing edges
+		OUT_.shrink_to_fit();
+		IN_.clear(); //incoming edges
+		IN_.shrink_to_fit();
+
+		start_positions_in_.clear(); //for each node, its starting position in IN_
+		start_positions_in_.shrink_to_fit();
+		start_positions_out_.clear(); //for each node, its starting position in OUT_ and out_labels_
+		start_positions_out_.shrink_to_fit();
+
+		weights_.clear(); //one weight per node
+		weights_.shrink_to_fit();
+
+		parent_in_mst_.clear(); //one per node. For the roots we write nr_of_nodes
+		parent_in_mst_.shrink_to_fit();
+		mst_out_edges_.clear(); //marks outgoing edges of the MST, in OUT_ order
+		mst_out_edges_.shrink_to_fit();
+
+		//deltas on MST input edges
+		//for each node n, deltas_[n] is the weight of the edge leading to n, or 0 if n is a root.
+		deltas_.clear();
+		deltas_.shrink_to_fit();
+
+		sampled_ = bit_vector(0); 	//marks sampled nodes on the dBg
+
+		samples_.clear(); 	//weight samples
+		samples_.shrink_to_fit();
+
+	}
 
 
 	/*
@@ -2137,7 +2261,7 @@ private:
 
 	/*
 	 * temporary fast data structures used during construction
-	 * convention: we end them by underscore
+	 * convention: we end names by underscore (as well as functions that use them)
 	 */
 
 	//labels of outgoing edges. Corresponds to the BWT, except that there can be unnecessary $ here (will be removed in BWT)

@@ -14,7 +14,7 @@ format_t format = fastq;
 
 bool pause_ = false;
 bool do_not_optimize = false;
-bool XBWT = false;//still working on this
+bool XBWT = false;//buggy, still working on this
 
 void help(){
 	cout << "cw-dBg-build: builds the compressed weighted de Bruijn graph." << endl << endl;
@@ -157,19 +157,6 @@ int main(int argc, char** argv){
 	cout << "Number of edges " << cwdbg.number_of_edges() << endl;
 	cout << "Max abundance " << cwdbg.max_weight() << endl;
 	cout << "Mean abundance " << cwdbg.mean_weight() << endl;
-
-	/*
-	cout << "SPACE: " << endl;
-	cout << "  de Bruijn graph (BOSS): " << double(cwdbg.dbg_size_in_bits())/cwdbg.number_of_edges() << " bits per edge" << endl;
-	cout << "                          " << double(cwdbg.dbg_size_in_bits())/cwdbg.number_of_nodes() << " bits per node" << endl;
-	cout << "                          " << double(cwdbg.dbg_size_in_bits())/cwdbg.number_of_distinct_kmers() << " bits per distinct kmer" << endl;
-	cout << "  compressed weights:     " << double(cwdbg.weights_size_in_bits())/cwdbg.number_of_edges() << " bits per edge" << endl;
-	cout << "                          " << double(cwdbg.weights_size_in_bits())/cwdbg.number_of_nodes() << " bits per node" << endl;
-	cout << "                          " << double(cwdbg.weights_size_in_bits())/cwdbg.number_of_distinct_kmers() << " bits per distinct kmer" << endl;
-	cout << "  total:                  " << double(cwdbg.size_in_bits())/cwdbg.number_of_edges() << " bits per edge" << endl;
-	cout << "                          " << double(cwdbg.size_in_bits())/cwdbg.number_of_nodes() << " bits per node" << endl;
-	cout << "                          " << double(cwdbg.size_in_bits())/cwdbg.number_of_distinct_kmers() << " bits per distinct kmer" << endl<<endl;
-	 */
 
 	string out_index = input_file + ".cwdbg";
 
