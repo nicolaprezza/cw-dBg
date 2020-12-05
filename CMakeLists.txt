@@ -27,6 +27,6 @@ set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-g -ggdb -Ofast -fstrict-aliasing -march=nat
 add_executable(cw-dBg-build cw-dBg-build.cpp)
 TARGET_LINK_LIBRARIES(cw-dBg-build sdsl)
 
-add_executable(cw-dBg-benchmark cw-dBg-benchmark.cpp)
-TARGET_LINK_LIBRARIES(cw-dBg-benchmark sdsl)
+add_executable(cw-dBg-check cw-dBg-check.cpp)
+TARGET_LINK_LIBRARIES(cw-dBg-check sdsl)
 
