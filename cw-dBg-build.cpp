@@ -25,7 +25,7 @@ void help(){
 	cout << "Usage: cw-dBg-build [options] <input> <k>" << endl;
 	cout << "   Options:"<<endl;
 	cout << "   -l <nlines>         Use only the first nlines sequences from the input file to build the graph. If set to 0, use all lines. Default: 0."<<endl;
-	cout << "   -s <srate>          Sample one out of srate weights. Default: 50."<<endl;
+	cout << "   -s <srate>          Sample one out of srate weights. Default: " << srate <<endl;
 	cout << "   -a                  The input file is fasta. If not specified, it is assumed that the input file is fastq."<<endl;
 	cout << "   -o                  Turn off space optimization (does not prune the dBg)."<<endl;
 	cout << "   -p                  Pause exectution before and after construction in order to allow measuring RAM."<<endl;

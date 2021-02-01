@@ -1067,6 +1067,18 @@ public:
 	}
 
 	/*
+	 * input: packed kmer
+	 * output: abundance
+	 */
+	uint64_t abundance(__uint128_t& kmer, int k){
+
+		string km = kmer_to_str_(kmer, k);
+
+		return abundance(km);
+
+	}
+
+	/*
 	 * edge is represented as pair <node, rank> where rank is the rank among outgoing edges of node
 	 */
 	int weight_of_edge_(edge_t e){
