@@ -393,6 +393,7 @@ public:
 			uint16_t srate = 64,
 			bool XBWT = true,
 			bool do_not_optimize = false,
+			bool D = false,
 			bool verbose = true) : k(k), srate(srate), XBWT(XBWT){
 
 		assert(k>0 and k<=41);
@@ -563,6 +564,18 @@ public:
 		}
 
 		weights_.push_back(count);//push back weight of the last kmer
+
+		if(D){
+
+			//Count distinct abundances
+			cout << "Counting distinct abundances ..." << endl;
+			vector<uint32_t> W(weights_);
+			sort( W.begin(), W.end() );
+			W.erase( unique( W.begin(), W.end() ), W.end() );
+			cout << "done. " << W.size() << " distinct abundances (over a total of " << weights_.size() << " kmers)" << endl;
+
+
+		}
 
 		nr_of_nodes = start_positions_out_.size();
 

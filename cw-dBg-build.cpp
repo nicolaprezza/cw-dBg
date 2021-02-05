@@ -16,6 +16,7 @@ uint64_t nlines = 0;
 
 format_t format = fastq;
 
+bool D = false;
 bool pause_ = false;
 bool do_not_optimize = false;
 bool XBWT = false;//buggy, still working on this
@@ -29,6 +30,7 @@ void help(){
 	cout << "   -a                  The input file is fasta. If not specified, it is assumed that the input file is fastq."<<endl;
 	cout << "   -o                  Turn off space optimization (does not prune the dBg)."<<endl;
 	cout << "   -p                  Pause exectution before and after construction in order to allow measuring RAM."<<endl;
+	cout << "   -d                  Report also number of distinct abundances. Default: disabled."<<endl;
 	//cout << "   -x                  Disable XBWT and build a (heavier) BOSS representation instead."<<endl;
 	cout << "   <input>             Input fasta/fastq file (see option -a). Mandatory."<<endl;
 	cout << "   <k>                 Order of the de Bruijn graph in [1,41]. Mandatory."<<endl;
@@ -54,6 +56,10 @@ void parse_args(char** argv, int argc, int &ptr){
 	}else if(s.compare("-a")==0){
 
 		format = fasta;
+
+	}else if(s.compare("-d")==0){
+
+		D = true;
 
 	}else if(s.compare("-p")==0){
 
@@ -115,7 +121,7 @@ int main(int argc, char** argv){
 	auto t1 = std::chrono::high_resolution_clock::now();
 
 	//cw_dBg<bit_vector, wt_huff<> > cwdbg(input_file, format, nlines, k, srate, true); //fast - uses uncompressed vectors
-	cw_dBg<> cwdbg(input_file, format, nlines, k, srate, XBWT, do_not_optimize, true); //slow but very small - uses rrr-compressed bit-vectors everywhere
+	cw_dBg<> cwdbg(input_file, format, nlines, k, srate, XBWT, do_not_optimize, D, true); //slow but very small - uses rrr-compressed bit-vectors everywhere
 
 	/*
 	string km;
