@@ -565,18 +565,6 @@ public:
 
 		weights_.push_back(count);//push back weight of the last kmer
 
-		if(D){
-
-			//Count distinct abundances
-			cout << "Counting distinct abundances ..." << endl;
-			vector<uint32_t> W(weights_);
-			sort( W.begin(), W.end() );
-			W.erase( unique( W.begin(), W.end() ), W.end() );
-			cout << "done. " << W.size() << " distinct abundances (over a total of " << weights_.size() << " kmers)" << endl;
-
-
-		}
-
 		nr_of_nodes = start_positions_out_.size();
 
 		OUT_ = vector<uint64_t>(out_labels_.size());
@@ -764,6 +752,20 @@ public:
 
 		if((not do_not_optimize) and XBWT)
 			prune(verbose);
+
+
+		if(D){
+
+			//Count distinct abundances
+			cout << "Counting distinct abundances ..." << endl;
+			vector<uint32_t> W(weights_);
+			sort( W.begin(), W.end() );
+			W.erase( unique( W.begin(), W.end() ), W.end() );
+			cout << "done. " << W.size() << " distinct abundances" << endl;
+
+
+		}
+
 
 		if(verbose)
 			cout << "Computing deltas on the MST edges ... " << endl;
