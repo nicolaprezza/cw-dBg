@@ -40,7 +40,8 @@ to build the compressed weighted de Bruijn graph of order k on the file input (a
 
 The tool cw-dBg-check allows to benchmark the data structure previously built as follows:  
 
-Usage: cw-dBg-check [options] <input_index> <input_fastx>  
+>  cw-dBg-check [options] <input_index> <input_fastx>  
+
 Options:  
 &nbsp;&nbsp;&nbsp;&nbsp;-q <arg>            Extract and test the structure on the first maximum <arg> k-mers in the dataset. Default: 1000000  
 &nbsp;&nbsp;&nbsp;&nbsp;-a                  The input file is fasta. If not specified, it is assumed that the input file is fastq.  
