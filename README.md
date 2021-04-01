@@ -37,3 +37,13 @@ After compiling, run
 >  cw-dBg-build [-l nlines] [-a] [-s srate] input k
 
 to build the compressed weighted de Bruijn graph of order k on the file input (a fastq file by default, or a fasta file if option -a is specified). if option -l nlines is specified, build the graph using only the first nlines sequences from the input file. If option -s srate is specified, sample one out of srate weights (default: srate=64).
+
+The tool cw-dBg-check allows to benchmark the data structure previously built as follows:
+
+Usage: cw-dBg-check [options] <input_index> <input_fastx>
+Options:
+   -q <arg>            Extract and test the structure on the first maximum <arg> k-mers in the dataset. Default: 1000000
+   -a                  The input file is fasta. If not specified, it is assumed that the input file is fastq.
+   -c                  Check correctness of the structure against a classic hash (space-consuming!!). Default: false.
+   <input_index>       Input index built with cw-dbg-build. Mandatory.
+   <input_fastx>       Fasta/fastq file from which test kmers will be extracted. Must be the same on which the index was built.
