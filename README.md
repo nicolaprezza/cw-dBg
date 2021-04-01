@@ -42,8 +42,8 @@ The tool cw-dBg-check allows to benchmark the data structure previously built as
 
 Usage: cw-dBg-check [options] <input_index> <input_fastx>  
 Options:  
-   -q <arg>            Extract and test the structure on the first maximum <arg> k-mers in the dataset. Default: 1000000  
-   -a                  The input file is fasta. If not specified, it is assumed that the input file is fastq.  
-   -c                  Check correctness of the structure against a classic hash (space-consuming!!). Default: false.  
-   <input_index>       Input index built with cw-dbg-build. Mandatory.  
-   <input_fastx>       Fasta/fastq file from which test kmers will be extracted. Must be the same on which the index was built.  
+&nbsp;&nbsp;&nbsp;&nbsp;-q <arg>            Extract and test the structure on the first maximum <arg> k-mers in the dataset. Default: 1000000  
+&nbsp;&nbsp;&nbsp;&nbsp;-a                  The input file is fasta. If not specified, it is assumed that the input file is fastq.  
+&nbsp;&nbsp;&nbsp;&nbsp;-c                  Check correctness of the structure against a classic hash (space-consuming!!). Default: false.  
+&nbsp;&nbsp;&nbsp;&nbsp;<input_index>       Input index built with cw-dbg-build. Mandatory.  
+&nbsp;&nbsp;&nbsp;&nbsp;<input_fastx>       Fasta/fastq file from which test kmers will be extracted. Must be the same on which the index was built.  
